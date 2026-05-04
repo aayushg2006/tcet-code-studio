@@ -14,6 +14,8 @@ import StudentProfile from "./pages/student/Profile.tsx";
 import FacultyDashboard from "./pages/faculty/Dashboard.tsx";
 import CreateProblem from "./pages/faculty/CreateProblem.tsx";
 import ManageProblems from "./pages/faculty/ManageProblems.tsx";
+import ProblemDetails from "./pages/faculty/ProblemDetails.tsx";
+import EditProblem from "./pages/faculty/EditProblem.tsx";
 import FacultySubmissions from "./pages/faculty/Submissions.tsx";
 import FacultyLeaderboard from "./pages/faculty/Leaderboard.tsx";
 
@@ -36,6 +38,8 @@ const App = () => (
             <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
             <Route path="/faculty/create-problem" element={<CreateProblem />} />
             <Route path="/faculty/problems" element={<ManageProblems />} />
+            <Route path="/faculty/problems/:id" element={<ProblemDetails />} />
+            <Route path="/faculty/problems/:id/edit" element={<EditProblem />} />
             <Route path="/faculty/submissions" element={<FacultySubmissions />} />
             <Route path="/faculty/leaderboard" element={<FacultyLeaderboard />} />
             <Route path="*" element={<NotFound />} />
