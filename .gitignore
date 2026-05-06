@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 🔥 IMPORTANT
+backend/firebase-key.json
