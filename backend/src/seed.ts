@@ -1,118 +1,173 @@
+import { env } from "./config/env";
 import { db } from "./firebase";
+import {
+  DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
+  DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
+  DIFFICULTY_RATING_WEIGHTS,
+} from "./shared/constants/domain";
 
-async function seedDatabase() {
+async function seedDatabase(): Promise<void> {
   try {
     console.log("Seeding database...");
 
-    // ================= USERS =================
+    const now = new Date();
+
     const users = [
       {
-        email: "student1@tcet.com",
+        email: "student1@tcetmumbai.in",
         name: "Soham Jain",
         role: "STUDENT",
         department: "AI&DS",
         uid: "TCET001",
-        rating: 0,
-        problemsSolved: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        rating: DIFFICULTY_RATING_WEIGHTS.Easy,
+        score: DIFFICULTY_RATING_WEIGHTS.Easy,
+        problemsSolved: 1,
+        submissionCount: 1,
+        acceptedSubmissionCount: 1,
+        accuracy: 100,
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+        lastAcceptedAt: now,
       },
       {
-        email: "faculty1@tcet.com",
+        email: "faculty1@tcetmumbai.in",
         name: "Prof. Mehta",
         role: "FACULTY",
         department: "IT",
+        uid: "FAC001",
         rating: 0,
+        score: 0,
         problemsSolved: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
+        submissionCount: 0,
+        acceptedSubmissionCount: 0,
+        accuracy: 0,
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+        lastAcceptedAt: null,
+      },
     ];
 
     for (const user of users) {
-      await db.collection("users").doc(user.email).set(user);
+      await db.collection("users").doc(user.email).set(user, { merge: true });
     }
 
-    // ================= PROBLEMS =================
     const problems = [
       {
         id: "problem_001",
         title: "Hello World in C",
-        objective: "Learn basic I/O in C",
-        task: "Print Hello World and input string",
-
-        inputFormat: "Single string input",
-        outputFormat: "Print Hello World + input",
-        constraints: "1 <= length <= 1000",
-
-        sampleInput: "Welcome",
-        sampleOutput: "Hello, World!\nWelcome",
-        explanation: "Print static + dynamic input",
-
-        testCases: [
-          { input: "abc", output: "Hello, World!\nabc" },
-          { input: "TCET", output: "Hello, World!\nTCET" }
-        ],
-
-        difficulty: "EASY",
+        statement: "Print Hello, World! and then print the given input string on the next line.",
+        inputFormat: "A single string input.",
+        outputFormat: "Print Hello, World! and then the input string.",
+        constraints: ["1 <= length <= 1000"],
+        difficulty: "Easy",
         tags: ["C", "basics"],
-
-        createdBy: "faculty1@tcet.com",
+        timeLimitSeconds: DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
+        memoryLimitMb: DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
+        lifecycleState: "Published",
+        createdBy: "faculty1@tcetmumbai.in",
         createdByRole: "FACULTY",
-
+        totalSubmissions: 1,
+        acceptedSubmissions: 1,
+        acceptanceRate: 100,
+        sampleTestCases: [{ input: "Welcome", output: "Hello, World!\nWelcome" }],
+        hiddenTestCases: [
+          { input: "abc", output: "Hello, World!\nabc" },
+          { input: "TCET", output: "Hello, World!\nTCET" },
+        ],
+        createdAt: now,
+        updatedAt: now,
         approved: true,
-
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
+        timeLimit: DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
+        memoryLimit: DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
+      },
+      {
+        id: "problem_002",
+        title: "Sum of Two Numbers",
+        statement: "Read two integers and print their sum.",
+        inputFormat: "Two integers separated by whitespace.",
+        outputFormat: "Print one integer representing the sum.",
+        constraints: ["-10^9 <= a, b <= 10^9"],
+        difficulty: "Medium",
+        tags: ["math", "basics"],
+        timeLimitSeconds: DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
+        memoryLimitMb: DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
+        lifecycleState: "Published",
+        createdBy: "faculty1@tcetmumbai.in",
+        createdByRole: "FACULTY",
+        totalSubmissions: 0,
+        acceptedSubmissions: 0,
+        acceptanceRate: 0,
+        sampleTestCases: [{ input: "2 5", output: "7" }],
+        hiddenTestCases: [{ input: "-3 7", output: "4" }],
+        createdAt: now,
+        updatedAt: now,
+        approved: true,
+        timeLimit: DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
+        memoryLimit: DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
+      },
     ];
 
     for (const problem of problems) {
-      await db.collection("problems").doc(problem.id).set(problem);
+      await db.collection("problems").doc(problem.id).set(problem, { merge: true });
     }
 
-    // ================= SUBMISSIONS =================
     const submissions = [
       {
-        userEmail: "student1@tcet.com",
+        id: "submission_seed_001",
+        userEmail: "student1@tcetmumbai.in",
+        userRole: "STUDENT",
         problemId: "problem_001",
-
-        code: "#include<stdio.h> ...",
+        problemTitleSnapshot: "Hello World in C",
+        problemDifficultySnapshot: "Easy",
+        code: "#include<stdio.h>\nint main(){return 0;}",
         language: "c",
-
-        status: "accepted",
-        executionTime: 120,
-
-        testCasesPassed: 2,
-        totalTestCases: 2,
-
-        createdAt: new Date(),
-      }
+        status: "ACCEPTED",
+        runtimeMs: 120,
+        memoryKb: 8192,
+        passedCount: 3,
+        totalCount: 3,
+        executionProvider: env.EXECUTION_PROVIDER,
+        ratingAwarded: DIFFICULTY_RATING_WEIGHTS.Easy,
+        createdAt: now,
+        updatedAt: now,
+        judgedAt: now,
+        finalizationAppliedAt: now,
+      },
     ];
 
-    for (const sub of submissions) {
-      await db.collection("submissions").add(sub);
+    for (const submission of submissions) {
+      await db.collection("submissions").doc(submission.id).set(submission, { merge: true });
     }
 
-    // ================= LEADERBOARD =================
-    const leaderboard = [
+    const leaderboardEntries = [
       {
-        email: "student1@tcet.com",
-        rating: 100,
-        rank: 1,
+        email: "student1@tcetmumbai.in",
+        role: "STUDENT",
+        name: "Soham Jain",
+        uid: "TCET001",
+        rating: DIFFICULTY_RATING_WEIGHTS.Easy,
+        score: DIFFICULTY_RATING_WEIGHTS.Easy,
         problemsSolved: 1,
-        lastUpdated: new Date(),
-      }
+        submissionCount: 1,
+        acceptedSubmissionCount: 1,
+        accuracy: 100,
+        createdAt: now,
+        updatedAt: now,
+        lastAcceptedAt: now,
+      },
     ];
 
-    for (const entry of leaderboard) {
-      await db.collection("leaderboard").doc(entry.email).set(entry);
+    for (const entry of leaderboardEntries) {
+      await db.collection("leaderboard").doc(entry.email).set(entry, { merge: true });
     }
 
-    console.log("🔥 Database seeded successfully!");
+    console.log("Database seeded successfully!");
   } catch (error) {
     console.error(error);
+    process.exitCode = 1;
   }
 }
 
-seedDatabase();
+void seedDatabase();

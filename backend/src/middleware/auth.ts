@@ -1,45 +1,89 @@
+import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-console.log("🔥 NEW AUTH FILE LOADED");
-// export const authMiddleware = (req: any, res: any, next: any) => {
-//   try {
-    // const token = req.cookies.coe_shared_token;
-// 
-    // if (!token) {
-    //   return res.status(401).json({ message: "Not logged in" });
-    // }
-// 
-    // const decoded: any = jwt.verify(token, "SECRET_FROM_COE");
-// 
-    // if (decoded.status !== "ACTIVE") {
-    //   return res.status(403).json({ message: "Inactive user" });
-    // }
-// 
-    // req.user = {
-    //   email: decoded.email,
-    //   role: decoded.role,
-    // };
-// 
-    // next();
-//   } catch (error) {
-    // return res.status(403).json({ message: "Invalid token" });
-//   }
-//};
-export const authMiddleware = (req: any, res: any, next: any) => {
-    console.log("🔥 MOCK AUTH RUNNING");
-  const decoded = {
-    email: "student1@tcetmumbai.in",
-    role: "STUDENT",
-    status: "ACTIVE",
-  };
+import { env } from "../config/env";
+import { AppError } from "../shared/errors/app-error";
+import type { AuthenticatedUser, UserRole } from "../shared/types/auth";
 
-  if (decoded.status !== "ACTIVE") {
-    return res.status(403).json({ message: "Inactive user" });
+type JwtPayload = {
+  email?: string;
+  role?: string;
+  name?: string;
+  uid?: string;
+  department?: string;
+  status?: string;
+};
+
+const DEFAULT_MOCK_USER: AuthenticatedUser = {
+  email: env.MOCK_AUTH_DEFAULT_EMAIL,
+  role: env.MOCK_AUTH_DEFAULT_ROLE,
+  name: env.MOCK_AUTH_DEFAULT_NAME,
+  uid: env.MOCK_AUTH_DEFAULT_UID,
+  department: env.MOCK_AUTH_DEFAULT_DEPARTMENT,
+  status: "ACTIVE",
+};
+
+function normalizeRole(role: string | undefined): UserRole {
+  return role?.toUpperCase() === "FACULTY" ? "FACULTY" : "STUDENT";
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
   }
 
-  req.user = {
-    email: decoded.email,
-    role: decoded.role,
-  };
+  return value;
+}
 
-  next();
+function buildMockUser(headers: Record<string, string | string[] | undefined>): AuthenticatedUser {
+  return {
+    email: firstHeaderValue(headers["x-mock-email"])?.trim() || DEFAULT_MOCK_USER.email,
+    role: normalizeRole(firstHeaderValue(headers["x-mock-role"])),
+    name: firstHeaderValue(headers["x-mock-name"])?.trim() || DEFAULT_MOCK_USER.name,
+    uid: firstHeaderValue(headers["x-mock-uid"])?.trim() || DEFAULT_MOCK_USER.uid,
+    department: firstHeaderValue(headers["x-mock-department"])?.trim() || DEFAULT_MOCK_USER.department,
+    status: "ACTIVE",
+  };
+}
+
+function buildJwtUser(payload: JwtPayload): AuthenticatedUser {
+  if (!payload.email) {
+    throw new AppError(403, "Invalid token payload");
+  }
+
+  return {
+    email: payload.email,
+    role: normalizeRole(payload.role),
+    name: payload.name,
+    uid: payload.uid,
+    department: payload.department,
+    status: payload.status ?? "ACTIVE",
+  };
+}
+
+export const authMiddleware: RequestHandler = (req, _res, next) => {
+  try {
+    const authMode = env.AUTH_MODE;
+
+    if (authMode === "mock") {
+      req.user = buildMockUser(req.headers);
+      return next();
+    }
+
+    const token = req.cookies?.coe_shared_token;
+    if (!token) {
+      throw new AppError(401, "Not logged in");
+    }
+
+    const decoded = jwt.verify(token, env.COE_SHARED_TOKEN_SECRET) as JwtPayload;
+    const user = buildJwtUser(decoded);
+
+    if (user.status !== "ACTIVE") {
+      throw new AppError(403, "Inactive user");
+    }
+
+    req.user = user;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 };
