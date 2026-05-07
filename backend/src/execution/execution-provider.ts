@@ -1,4 +1,4 @@
-import type { SubmissionStatus, SupportedLanguage } from "../shared/types/domain";
+import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
 
 export interface ExecutionTestCase {
   input: string;
@@ -8,7 +8,7 @@ export interface ExecutionTestCase {
 
 export interface ExecutionRequest {
   code: string;
-  language: SupportedLanguage;
+  language: ExecutableLanguage;
   testCases: ExecutionTestCase[];
   problemId: string;
   timeLimitSeconds: number;

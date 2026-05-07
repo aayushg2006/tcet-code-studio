@@ -5,6 +5,7 @@ import { AppError } from "../../shared/errors/app-error";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import { isFinalSubmissionStatus } from "../../shared/utils/normalize";
 import type { AuthenticatedUser } from "../../shared/types/auth";
+import type { SupportedLanguage } from "../../shared/types/domain";
 import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
 import { buildLeaderboardEntryFromUser } from "../leaderboard/leaderboard.model";
 import type { ProblemRecord } from "../problem/problem.model";
@@ -47,7 +48,7 @@ export interface SubmissionListQuery extends PaginationInput {
   problemId?: string;
   userEmail?: string;
   status?: SubmissionRecord["status"];
-  language?: SubmissionRecord["language"];
+  language?: SupportedLanguage;
 }
 
 function calculateAccuracy(acceptedSubmissionCount: number, submissionCount: number): number {

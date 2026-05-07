@@ -154,6 +154,29 @@ describe("TCET Code Studio backend APIs", () => {
     expect(manageDetail.body.problem.acceptanceRate).toBeCloseTo(66.67, 2);
   });
 
+  it("normalizes execution language aliases and rejects editor-only submission languages", async () => {
+    const { app } = createTestApp();
+    const createdProblem = await createProblem(app);
+
+    const aliasRunResponse = await request(app).post("/api/submissions/run").send({
+      problemId: createdProblem.id,
+      code: "accepted",
+      language: "py",
+    });
+
+    expect(aliasRunResponse.status).toBe(200);
+    expect(aliasRunResponse.body.result.language).toBe("python");
+
+    const editorOnlyRunResponse = await request(app).post("/api/submissions/run").send({
+      problemId: createdProblem.id,
+      code: "accepted",
+      language: "react",
+    });
+
+    expect(editorOnlyRunResponse.status).toBe(400);
+    expect(editorOnlyRunResponse.body.message).toBe("Validation failed");
+  });
+
   it("excludes faculty from the leaderboard, breaks rating ties by accuracy, and scopes submissions correctly", async () => {
     const { app } = createTestApp();
     const facultyProfileResponse = await request(app).get("/api/users/me").set(facultyHeaders);

@@ -1,5 +1,5 @@
 import type { UserRole } from "../../shared/types/auth";
-import type { Difficulty, SubmissionStatus, SupportedLanguage } from "../../shared/types/domain";
+import type { Difficulty, ExecutableLanguage, SubmissionStatus } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 
 export interface SubmissionRecord {
@@ -10,7 +10,7 @@ export interface SubmissionRecord {
   problemTitleSnapshot: string;
   problemDifficultySnapshot: Difficulty;
   code: string;
-  language: SupportedLanguage;
+  language: ExecutableLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -30,7 +30,7 @@ export interface SubmissionResponse {
   problemId: string;
   problemTitle: string;
   difficulty: Difficulty;
-  language: SupportedLanguage;
+  language: ExecutableLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -46,7 +46,7 @@ export interface SubmissionResponse {
 
 export interface SubmissionRunResponse {
   problemId: string;
-  language: SupportedLanguage;
+  language: ExecutableLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;

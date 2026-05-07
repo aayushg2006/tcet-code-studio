@@ -1,7 +1,43 @@
 import { env } from "../../config/env";
-import type { Difficulty, ProblemLifecycleState, SubmissionStatus, SupportedLanguage } from "../types/domain";
+import type {
+  Difficulty,
+  EditorOnlyLanguage,
+  ExecutableLanguage,
+  ProblemLifecycleState,
+  SubmissionStatus,
+  SupportedLanguage,
+} from "../types/domain";
 
-export const SUPPORTED_LANGUAGES: SupportedLanguage[] = ["c", "cpp", "java", "javascript", "python", "typescript"];
+export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
+  "c",
+  "cpp",
+  "java",
+  "javascript",
+  "python",
+  "ruby",
+  "arduino",
+  "go",
+  "rust",
+  "csharp",
+  "php",
+  "vanilla",
+  "react",
+  "typescript",
+  "html",
+  "css",
+  "assembly8086",
+  "kotlin",
+  "swift",
+  "dart",
+  "scala",
+  "elixir",
+  "erlang",
+  "racket",
+];
+export const EDITOR_ONLY_LANGUAGES: EditorOnlyLanguage[] = ["vanilla", "react", "html", "css"];
+export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
+  (language): language is ExecutableLanguage => !EDITOR_ONLY_LANGUAGES.includes(language as EditorOnlyLanguage),
+);
 export const PROBLEM_LIFECYCLE_STATES: ProblemLifecycleState[] = ["Draft", "Published", "Archived"];
 export const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
 export const FINAL_SUBMISSION_STATUSES: SubmissionStatus[] = [

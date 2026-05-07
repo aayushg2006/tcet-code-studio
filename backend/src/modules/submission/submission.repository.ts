@@ -4,10 +4,10 @@ import type { SubmissionStatus, SupportedLanguage } from "../../shared/types/dom
 import { toDate } from "../../shared/utils/date";
 import {
   normalizeDifficulty,
+  normalizeExecutableLanguage,
   normalizeNumber,
   normalizeRole,
   normalizeSubmissionStatus,
-  normalizeSupportedLanguage,
 } from "../../shared/utils/normalize";
 import type { SubmissionRecord } from "./submission.model";
 
@@ -37,7 +37,7 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     problemTitleSnapshot: typeof data.problemTitleSnapshot === "string" ? data.problemTitleSnapshot : String(data.problemTitle ?? ""),
     problemDifficultySnapshot: normalizeDifficulty(data.problemDifficultySnapshot ?? data.problemDifficulty),
     code: typeof data.code === "string" ? data.code : "",
-    language: normalizeSupportedLanguage(data.language),
+    language: normalizeExecutableLanguage(data.language),
     status: normalizeSubmissionStatus(data.status),
     runtimeMs: normalizeNumber(data.runtimeMs ?? data.executionTime, 0),
     memoryKb: normalizeNumber(data.memoryKb, 0),

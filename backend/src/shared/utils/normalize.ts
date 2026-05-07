@@ -1,5 +1,18 @@
-import { DIFFICULTIES, FINAL_SUBMISSION_STATUSES, PROBLEM_LIFECYCLE_STATES, SUPPORTED_LANGUAGES } from "../constants/domain";
-import type { Difficulty, ProblemLifecycleState, SubmissionStatus, SupportedLanguage } from "../types/domain";
+import {
+  DIFFICULTIES,
+  EDITOR_ONLY_LANGUAGES,
+  FINAL_SUBMISSION_STATUSES,
+  PROBLEM_LIFECYCLE_STATES,
+  SUPPORTED_LANGUAGES,
+} from "../constants/domain";
+import type {
+  Difficulty,
+  EditorOnlyLanguage,
+  ExecutableLanguage,
+  ProblemLifecycleState,
+  SubmissionStatus,
+  SupportedLanguage,
+} from "../types/domain";
 import type { UserRole } from "../types/auth";
 
 export function normalizeNumber(value: unknown, fallback = 0): number {
@@ -53,14 +66,23 @@ export function normalizeProblemLifecycleState(value: unknown): ProblemLifecycle
   return PROBLEM_LIFECYCLE_STATES[0];
 }
 
-export function normalizeSupportedLanguage(value: unknown): SupportedLanguage {
+export function tryNormalizeSupportedLanguage(value: unknown): SupportedLanguage | null {
   if (typeof value === "string") {
     const candidate = value.trim().toLowerCase();
     if (candidate === "c++" || candidate === "cpp") {
       return "cpp";
     }
+    if (candidate === "c#" || candidate === "csharp" || candidate === "c-sharp") {
+      return "csharp";
+    }
     if (candidate === "js" || candidate === "javascript") {
       return "javascript";
+    }
+    if (candidate === "vanilla" || candidate === "vanilla js" || candidate === "vanilla javascript") {
+      return "vanilla";
+    }
+    if (candidate === "react" || candidate === "reactjs" || candidate === "react.js") {
+      return "react";
     }
     if (candidate === "ts" || candidate === "typescript") {
       return "typescript";
@@ -68,12 +90,50 @@ export function normalizeSupportedLanguage(value: unknown): SupportedLanguage {
     if (candidate === "py" || candidate === "python") {
       return "python";
     }
+    if (candidate === "go" || candidate === "golang") {
+      return "go";
+    }
+    if (candidate === "arduino" || candidate === "auriduno") {
+      return "arduino";
+    }
+    if (
+      candidate === "assembly language 8086" ||
+      candidate === "assembly8086" ||
+      candidate === "assembly 8086" ||
+      candidate === "8086 assembly" ||
+      candidate === "8086"
+    ) {
+      return "assembly8086";
+    }
+    if (candidate === "dart" || candidate === "draft") {
+      return "dart";
+    }
     if (SUPPORTED_LANGUAGES.includes(candidate as SupportedLanguage)) {
       return candidate as SupportedLanguage;
     }
   }
 
-  return "cpp";
+  return null;
+}
+
+export function normalizeSupportedLanguage(value: unknown, fallback: SupportedLanguage = "cpp"): SupportedLanguage {
+  return tryNormalizeSupportedLanguage(value) ?? fallback;
+}
+
+export function isEditorOnlyLanguage(language: SupportedLanguage): language is EditorOnlyLanguage {
+  return EDITOR_ONLY_LANGUAGES.includes(language as EditorOnlyLanguage);
+}
+
+export function isExecutableLanguage(language: SupportedLanguage): language is ExecutableLanguage {
+  return !isEditorOnlyLanguage(language);
+}
+
+export function normalizeExecutableLanguage(
+  value: unknown,
+  fallback: ExecutableLanguage = "cpp",
+): ExecutableLanguage {
+  const normalized = tryNormalizeSupportedLanguage(value);
+  return normalized && isExecutableLanguage(normalized) ? normalized : fallback;
 }
 
 export function normalizeSubmissionStatus(value: unknown): SubmissionStatus {
