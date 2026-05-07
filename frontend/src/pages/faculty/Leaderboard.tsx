@@ -1,48 +1,107 @@
-import { AppLayout } from "@/components/AppLayout";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { leaderboard } from "@/data/mock";
+import { useMemo } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 
+import { AppLayout } from "@/components/AppLayout";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { leaderboardApi } from "@/api/services";
+
+function downloadCsv(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.setAttribute("download", filename);
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 export default function FacultyLeaderboard() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["faculty-leaderboard"],
+    queryFn: () => leaderboardApi.list({ pageSize: 100 }, "/faculty/leaderboard"),
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: () => leaderboardApi.exportCsv("/faculty/leaderboard"),
+    onSuccess: (csv) => {
+      downloadCsv("leaderboard.csv", csv);
+      toast.success("CSV export ready");
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to export CSV");
+    },
+  });
+
+  const leaderboard = data?.items ?? [];
+  const rows = useMemo(() => leaderboard, [leaderboard]);
+
   return (
     <AppLayout>
-      <div className="container py-8 space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="container space-y-6 py-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold">Student Leaderboard</h1>
-            <p className="text-muted-foreground mt-1">Track performance across the cohort.</p>
+            <p className="mt-1 text-muted-foreground">Track performance across the cohort.</p>
           </div>
-          <Button variant="outline" onClick={() => toast.success("CSV export started (mock)")}>
-            <Download className="h-4 w-4 mr-2" /> Export CSV
+          <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending}>
+            <Download className="mr-2 h-4 w-4" /> {exportMutation.isPending ? "Exporting..." : "Export CSV"}
           </Button>
         </div>
 
-        <Card className="shadow-card overflow-hidden">
+        <Card className="overflow-hidden shadow-card">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-secondary text-secondary-foreground text-left">
+              <thead className="bg-secondary text-left text-secondary-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-semibold w-16">Rank</th>
+                  <th className="w-16 px-4 py-3 font-semibold">Rank</th>
                   <th className="px-4 py-3 font-semibold">Student</th>
-                  <th className="px-4 py-3 font-semibold text-right">Solved</th>
-                  <th className="px-4 py-3 font-semibold text-right">Score</th>
-                  <th className="px-4 py-3 font-semibold text-right">Accuracy</th>
-                  <th className="px-4 py-3 font-semibold text-right">Submissions</th>
+                  <th className="px-4 py-3 text-right font-semibold">Solved</th>
+                  <th className="px-4 py-3 text-right font-semibold">Score</th>
+                  <th className="px-4 py-3 text-right font-semibold">Accuracy</th>
+                  <th className="px-4 py-3 text-right font-semibold">Submissions</th>
                 </tr>
               </thead>
               <tbody>
-                {leaderboard.map(s => (
-                  <tr key={s.rank} className={`border-t border-border hover:bg-secondary/40 ${s.rank <= 3 ? "bg-accent/5" : ""}`}>
-                    <td className="px-4 py-3 font-display font-bold text-accent">#{s.rank}</td>
-                    <td className="px-4 py-3"><div className="font-medium">{s.name}</div><div className="text-xs text-muted-foreground font-mono-code">{s.roll}</div></td>
-                    <td className="px-4 py-3 text-right font-mono-code">{s.solved}</td>
-                    <td className="px-4 py-3 text-right font-mono-code font-semibold">{s.score}</td>
-                    <td className="px-4 py-3 text-right font-mono-code">{s.accuracy}%</td>
-                    <td className="px-4 py-3 text-right font-mono-code">{Math.round(s.solved / (s.accuracy/100))}</td>
+                {isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                      Loading leaderboard...
+                    </td>
                   </tr>
-                ))}
+                )}
+                {isError && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-destructive">
+                      {(error as Error)?.message || "Failed to load leaderboard"}
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && !isError &&
+                  rows.map((student) => (
+                    <tr key={student.rank} className={`border-t border-border hover:bg-secondary/40 ${student.rank <= 3 ? "bg-accent/5" : ""}`}>
+                      <td className="px-4 py-3 font-display font-bold text-accent">#{student.rank}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{student.name ?? student.email}</div>
+                        <div className="font-mono-code text-xs text-muted-foreground">{student.email}</div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
+                      <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>
+                      <td className="px-4 py-3 text-right font-mono-code">{student.accuracy}%</td>
+                      <td className="px-4 py-3 text-right font-mono-code">{student.submissionCount}</td>
+                    </tr>
+                  ))}
+                {!isLoading && !isError && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                      No leaderboard data yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

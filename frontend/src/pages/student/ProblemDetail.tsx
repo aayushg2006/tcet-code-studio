@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Play,
   Send,
@@ -9,57 +10,147 @@ import {
   RotateCcw,
   CheckCircle2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
-import { getProblem } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { submissionsApi, problemsApi } from "@/api/services";
+import {
+  EXECUTABLE_LANGUAGES,
+  toLanguageLabel,
+  toStatusLabel,
+} from "@/api/mappers";
+import type {
+  ExecutableLanguage,
+  Submission,
+  SubmissionResult,
+  SubmissionStatus,
+} from "@/api/types";
 
-const starter = `// Solution.cpp
+const starterCode = `// Solution.cpp
 #include <bits/stdc++.h>
 using namespace std;
 
 class Solution {
 public:
-    vector<int> twoSum(vector<int>& nums, int target) {
-        unordered_map<int,int> seen;
-        for (int i = 0; i < nums.size(); ++i) {
-            int need = target - nums[i];
-            if (seen.count(need)) return {seen[need], i};
-            seen[nums[i]] = i;
-        }
+    vector<int> solve() {
         return {};
     }
 };
 `;
 
-export default function ProblemDetail() {
-  const { id = "p001" } = useParams();
-  const problem = getProblem(id);
-  const testCases = problem.examples;
-  const [code, setCode] = useState(starter);
-  const [lang, setLang] = useState("C++");
-  const [tab, setTab] = useState<"tests" | "console" | "subs">("tests");
-  const [result, setResult] = useState<null | { ok: boolean; runtime: string; memory: string; passed: number; total: number }>(null);
-  const [running, setRunning] = useState(false);
+function formatStatus(status: SubmissionStatus): string {
+  return toStatusLabel(status);
+}
 
-  const run = (submit = false) => {
-    setRunning(true);
-    setResult(null);
-    setTab(submit ? "tests" : "console");
-    setTimeout(() => {
-      setRunning(false);
-      setResult({
-        ok: true,
-        runtime: "4 ms",
-        memory: "8.1 MB",
-        passed: testCases.length,
-        total: testCases.length,
-      });
-    }, 900);
-  };
+function formatRelativeTime(isoDate: string): string {
+  const created = new Date(isoDate).getTime();
+  const diffMs = Date.now() - created;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+  if (diffMinutes < 1) {
+    return "just now";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} min ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours} h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} d ago`;
+}
+
+export default function ProblemDetail() {
+  const { id = "" } = useParams();
+  const queryClient = useQueryClient();
+
+  const [code, setCode] = useState(starterCode);
+  const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
+  const [tab, setTab] = useState<"tests" | "console" | "subs">("tests");
+  const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
+  const [submitResult, setSubmitResult] = useState<Submission | null>(null);
+
+  const { data: problemEnvelope, isLoading: problemLoading, isError: problemError, error: problemErrorObj } = useQuery({
+    queryKey: ["student-problem-detail", id],
+    queryFn: () => problemsApi.getStudentDetail(id),
+    enabled: Boolean(id),
+  });
+
+  const { data: submissionsData } = useQuery({
+    queryKey: ["student-problem-submissions", id],
+    queryFn: () => submissionsApi.list({ problemId: id, pageSize: 25 }),
+    enabled: Boolean(id),
+  });
+
+  const submissions = useMemo(
+    () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    [submissionsData?.items],
+  );
+
+  const runMutation = useMutation({
+    mutationFn: () => submissionsApi.run({ problemId: id, code, language }),
+    onSuccess: (data) => {
+      setRunResult(data.result);
+      setSubmitResult(null);
+      setTab("console");
+    },
+    onError: (error) => {
+      toast.error((error as Error).message || "Run failed");
+    },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: () => submissionsApi.create({ problemId: id, code, language }),
+    onSuccess: (data) => {
+      setSubmitResult(data.submission);
+      setRunResult(null);
+      setTab("tests");
+      queryClient.invalidateQueries({ queryKey: ["student-problem-submissions", id] });
+      queryClient.invalidateQueries({ queryKey: ["student-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["student-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["student-leaderboard"] });
+      queryClient.invalidateQueries({ queryKey: ["student-problems"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message || "Submit failed");
+    },
+  });
+
+  if (problemLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Loading problem...
+      </div>
+    );
+  }
+
+  if (problemError || !problemEnvelope) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-destructive">
+        {(problemErrorObj as Error)?.message || "Failed to load problem"}
+      </div>
+    );
+  }
+
+  const problem = problemEnvelope.problem;
+  const testCases = problem.sampleTestCases;
+  const activeResult = submitResult
+    ? {
+        status: submitResult.status,
+        runtimeMs: submitResult.runtimeMs,
+        memoryKb: submitResult.memoryKb,
+        passedCount: submitResult.passedCount,
+        totalCount: submitResult.totalCount,
+      }
+    : runResult;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -70,7 +161,7 @@ export default function ProblemDetail() {
             <ChevronLeft className="h-4 w-4" /> Back to problems
           </Link>
           <div className="hidden text-xs text-muted-foreground md:block">
-            Time limit: {problem.timeLimit}s {"\u2022"} Memory: {problem.memoryLimit} MB
+            Time limit: {problem.timeLimitSeconds}s {"\u2022"} Memory: {problem.memoryLimitMb} MB
           </div>
         </div>
       </div>
@@ -105,19 +196,17 @@ export default function ProblemDetail() {
             <div>
               <h3 className="mb-1 font-display text-base font-semibold">Examples</h3>
               <div className="space-y-2">
-                {testCases
-                  .filter((testCase) => !testCase.hidden)
-                  .map((testCase, index) => (
-                    <div key={`${testCase.input}-${index}`} className="rounded-md bg-secondary p-3 font-mono-code text-xs">
-                      <div>
-                        <span className="text-accent">Input:</span> {testCase.input}
-                      </div>
-                      <div>
-                        <span className="text-accent">Output:</span> {testCase.output}
-                      </div>
-                      {testCase.explanation && <div className="mt-2 text-muted-foreground">{testCase.explanation}</div>}
+                {problem.examples.map((testCase, index) => (
+                  <div key={`${testCase.input}-${index}`} className="rounded-md bg-secondary p-3 font-mono-code text-xs">
+                    <div>
+                      <span className="text-accent">Input:</span> {testCase.input}
                     </div>
-                  ))}
+                    <div>
+                      <span className="text-accent">Output:</span> {testCase.output}
+                    </div>
+                    {testCase.explanation && <div className="mt-2 text-muted-foreground">{testCase.explanation}</div>}
+                  </div>
+                ))}
               </div>
             </div>
             <div>
@@ -136,22 +225,23 @@ export default function ProblemDetail() {
             <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
               <div className="flex items-center gap-2">
                 <select
-                  value={lang}
-                  onChange={(event) => setLang(event.target.value)}
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as ExecutableLanguage)}
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
                 >
-                  <option>C++</option>
-                  <option>Python</option>
-                  <option>Java</option>
-                  <option>JavaScript</option>
+                  {EXECUTABLE_LANGUAGES.map((lang) => (
+                    <option key={lang} value={lang}>
+                      {toLanguageLabel(lang)}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
                   <FileCode2 className="h-3 w-3 text-accent" />
-                  <span className="font-mono-code">Solution.cpp</span>
+                  <span className="font-mono-code">Solution.{language}</span>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setCode(starter)} aria-label="Reset">
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setCode(starterCode)} aria-label="Reset">
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
                 <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Settings">
@@ -176,26 +266,30 @@ export default function ProblemDetail() {
             </div>
             <div className="flex items-center justify-between border-t border-border bg-secondary/50 px-3 py-1.5 font-mono-code text-[11px] text-muted-foreground">
               <span>Ln {code.split("\n").length}, Col 1</span>
-              <span>UTF-8 {"\u2022"} LF {"\u2022"} {lang}</span>
+              <span>UTF-8 {"\u2022"} LF {"\u2022"} {toLanguageLabel(language)}</span>
             </div>
           </Card>
 
           <Card className="flex items-center justify-between gap-2 p-3 shadow-card">
             <div className="text-xs text-muted-foreground">
-              {result ? (
+              {activeResult ? (
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-success" /> All sample tests passed
+                  <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {formatStatus(activeResult.status)}
                 </span>
               ) : (
                 "Run code to see results"
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => run(false)} disabled={running}>
-                <Play className="mr-1 h-4 w-4" /> Run
+              <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || submitMutation.isPending}>
+                <Play className="mr-1 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
               </Button>
-              <Button onClick={() => run(true)} disabled={running} className="bg-accent text-accent-foreground hover:bg-accent/90">
-                <Send className="mr-1 h-4 w-4" /> Submit
+              <Button
+                onClick={() => submitMutation.mutate()}
+                disabled={runMutation.isPending || submitMutation.isPending}
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+              >
+                <Send className="mr-1 h-4 w-4" /> {submitMutation.isPending ? "Submitting..." : "Submit"}
               </Button>
             </div>
           </Card>
@@ -219,29 +313,29 @@ export default function ProblemDetail() {
           <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
             {tab === "tests" && (
               <>
-                {result && (
+                {activeResult && (
                   <div
                     className={cn(
                       "rounded-md border p-3",
-                      result.ok
+                      activeResult.status === "ACCEPTED"
                         ? "border-success/30 bg-success/10 text-success"
                         : "border-destructive/30 bg-destructive/10 text-destructive",
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <StatusBadge status={result.ok ? "Accepted" : "Wrong Answer"} />
+                      <StatusBadge status={formatStatus(activeResult.status)} />
                       <span className="font-mono-code text-xs">
-                        {result.passed}/{result.total} passed
+                        {activeResult.passedCount}/{activeResult.totalCount} passed
                       </span>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2 font-mono-code text-xs text-foreground">
                       <div className="rounded bg-background p-2">
                         <div className="text-muted-foreground">Runtime</div>
-                        {result.runtime}
+                        {activeResult.runtimeMs} ms
                       </div>
                       <div className="rounded bg-background p-2">
                         <div className="text-muted-foreground">Memory</div>
-                        {result.memory}
+                        {(activeResult.memoryKb / 1024).toFixed(1)} MB
                       </div>
                     </div>
                   </div>
@@ -250,45 +344,32 @@ export default function ProblemDetail() {
                   <div key={`${testCase.input}-${index}`} className="rounded-md border border-border p-3">
                     <div className="mb-2 text-xs font-semibold">Case {index + 1}</div>
                     <label className="text-[11px] uppercase tracking-wider text-muted-foreground">Input</label>
-                    <textarea
-                      defaultValue={testCase.input}
-                      className="mt-1 w-full rounded border border-border bg-secondary px-2 py-1.5 font-mono-code text-xs"
-                      rows={2}
-                    />
+                    <div className="mt-1 rounded border border-border bg-secondary px-2 py-1.5 font-mono-code text-xs">
+                      {testCase.input}
+                    </div>
                     <label className="mt-2 block text-[11px] uppercase tracking-wider text-muted-foreground">Expected</label>
                     <div className="mt-1 rounded bg-secondary px-2 py-1.5 font-mono-code text-xs">{testCase.output}</div>
-                    {result && (
-                      <>
-                        <label className="mt-2 block text-[11px] uppercase tracking-wider text-muted-foreground">Actual</label>
-                        <div className="mt-1 rounded bg-success/10 px-2 py-1.5 font-mono-code text-xs text-success">
-                          {testCase.output}
-                        </div>
-                      </>
-                    )}
                   </div>
                 ))}
               </>
             )}
             {tab === "console" && (
               <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
-                {running
-                  ? "$ Running solution against sample tests..."
-                  : result
-                    ? "$ Compilation successful\n$ Test 1 passed (2ms)\n$ Test 2 passed (1ms)\n$ Test 3 passed (1ms)\n$ Done."
-                    : "// stdout will appear here"}
+                {runMutation.isPending || submitMutation.isPending
+                  ? "$ Running solution against test cases..."
+                  : runResult
+                    ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}` || `Status: ${formatStatus(runResult.status)}`
+                    : "// stdout/stderr will appear here"}
               </pre>
             )}
             {tab === "subs" && (
               <div className="space-y-2">
-                {[
-                  { s: "Accepted", t: "just now", r: "4 ms" },
-                  { s: "Wrong Answer", t: "5 min ago", r: "\u2014" },
-                  { s: "Accepted", t: "yesterday", r: "6 ms" },
-                ].map((submission, index) => (
-                  <div key={index} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
-                    <StatusBadge status={submission.s} />
-                    <span className="font-mono-code text-muted-foreground">{submission.r}</span>
-                    <span className="text-muted-foreground">{submission.t}</span>
+                {submissions.length === 0 && <div className="text-xs text-muted-foreground">No submissions yet.</div>}
+                {submissions.map((submission) => (
+                  <div key={submission.id} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
+                    <StatusBadge status={formatStatus(submission.status)} />
+                    <span className="font-mono-code text-muted-foreground">{submission.runtimeMs} ms</span>
+                    <span className="text-muted-foreground">{formatRelativeTime(submission.createdAt)}</span>
                   </div>
                 ))}
               </div>

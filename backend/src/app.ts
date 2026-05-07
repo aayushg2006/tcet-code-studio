@@ -1,5 +1,5 @@
 import cookieParser from "cookie-parser";
-import cors from "cors";
+import cors, { type CorsOptions } from "cors";
 import express, { type Express } from "express";
 import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
@@ -9,28 +9,57 @@ import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
-function resolveCorsOrigin(): true | string | string[] {
-  if (env.corsOrigins.length === 0) {
-    return true;
-  }
+function normalizeOrigin(origin: string): string {
+  return origin.trim().toLowerCase().replace(/\/$/, "");
+}
 
-  if (env.corsOrigins.length === 1) {
-    return env.corsOrigins[0];
-  }
+function resolveCorsOptions(): CorsOptions {
+  const configuredOrigins = env.corsOrigins.map(normalizeOrigin);
+  const allowedOrigins = new Set<string>([
+    ...configuredOrigins,
+    // Helpful local aliases for development when the browser uses 127.0.0.1.
+    ...configuredOrigins
+      .filter((origin) => origin.includes("localhost"))
+      .map((origin) => origin.replace("localhost", "127.0.0.1")),
+  ]);
 
-  return env.corsOrigins;
+  return {
+    origin: (requestOrigin, callback) => {
+      // Allow non-browser callers (e.g. curl/postman/health checks)
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.has(normalizeOrigin(requestOrigin))) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("CORS origin not allowed"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-mock-role",
+      "x-mock-email",
+      "x-mock-name",
+      "x-mock-uid",
+      "x-mock-department",
+    ],
+  };
 }
 
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
+  const corsOptions = resolveCorsOptions();
 
   app.disable("x-powered-by");
-  app.use(
-    cors({
-      origin: resolveCorsOrigin(),
-      credentials: true,
-    }),
-  );
+  app.use(cors(corsOptions));
+  // Express 5 rejects "*" here; use a regex to match all routes for preflight.
+  app.options(/.*/, cors(corsOptions));
   app.use(cookieParser());
   app.use(express.json({ limit: "2mb" }));
 
