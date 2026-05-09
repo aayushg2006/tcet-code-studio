@@ -13,6 +13,7 @@ import type {
   StudentProblemSummary,
   Submission,
   SubmissionEnvelope,
+  SubmissionQueueReceipt,
   SubmissionStatus,
   SubmissionWritePayload,
   SupportedLanguage,
@@ -82,7 +83,7 @@ export const submissionsApi = {
       pathname,
     }),
   create: (payload: SubmissionWritePayload, pathname?: string) =>
-    apiRequest<SubmissionEnvelope>("/api/submissions", {
+    apiRequest<SubmissionQueueReceipt>("/api/submissions", {
       method: "POST",
       body: payload,
       pathname,

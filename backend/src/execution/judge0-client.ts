@@ -1,6 +1,9 @@
 import { Buffer } from "node:buffer";
+import { env } from "../config/env";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const IN_PROGRESS_STATUS_IDS = new Set([1, 2]);
+const PUBLIC_FALLBACK_BASE_URL = "https://ce.judge0.com";
 
 export interface Judge0Language {
   id: number;
@@ -17,6 +20,8 @@ export interface Judge0SubmissionRequest {
   memory_limit: number;
   enable_network: boolean;
   redirect_stderr_to_stdout: boolean;
+  enable_per_process_and_thread_time_limit?: boolean;
+  enable_per_process_and_thread_memory_limit?: boolean;
   base64_encoded?: boolean;
 }
 
@@ -26,6 +31,7 @@ interface Judge0Status {
 }
 
 export interface Judge0SubmissionResponse {
+  token?: string;
   stdout: string | null;
   stderr: string | null;
   compile_output: string | null;
@@ -33,6 +39,10 @@ export interface Judge0SubmissionResponse {
   time: string | null;
   memory: number | null;
   status: Judge0Status;
+}
+
+export interface Judge0SubmissionTokenResponse {
+  token: string;
 }
 
 export class Judge0ClientError extends Error {
@@ -64,6 +74,7 @@ function isJudge0SubmissionResponse(value: unknown): value is Judge0SubmissionRe
   const status = candidate.status as Partial<Judge0Status> | undefined;
 
   return (
+    (candidate.token === undefined || typeof candidate.token === "string") &&
     (candidate.stdout === null || typeof candidate.stdout === "string") &&
     (candidate.stderr === null || typeof candidate.stderr === "string") &&
     (candidate.compile_output === null || typeof candidate.compile_output === "string") &&
@@ -75,9 +86,22 @@ function isJudge0SubmissionResponse(value: unknown): value is Judge0SubmissionRe
   );
 }
 
+function isJudge0SubmissionTokenResponse(value: unknown): value is Judge0SubmissionTokenResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<Judge0SubmissionTokenResponse>;
+  return typeof candidate.token === "string" && candidate.token.trim().length > 0;
+}
+
 export class Judge0Client {
-  private readonly baseUrl = process.env.JUDGE0_BASE_URL?.trim() ?? "";
-  private readonly apiKey = process.env.JUDGE0_API_KEY?.trim() ?? "";
+  private activeBaseUrl = env.JUDGE0_BASE_URL;
+  private readonly apiKey = env.JUDGE0_API_KEY;
+  private readonly apiHost = env.JUDGE0_HOST;
+  private readonly pollIntervalMs = env.JUDGE0_POLL_INTERVAL_MS;
+  private readonly pollTimeoutMs = env.JUDGE0_POLL_TIMEOUT_MS;
+  private useRapidApiHeaders = env.JUDGE0_API_KEY.length > 0;
   private languagesPromise: Promise<Judge0Language[]> | null = null;
 
   usesApiKey(): boolean {
@@ -101,22 +125,56 @@ export class Judge0Client {
     return this.languagesPromise;
   }
 
-  async createSubmission(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
-    const encodedPayload: Judge0SubmissionRequest = {
+  async createSubmissionToken(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionTokenResponse> {
+    const encodedPayload = this.encodeSubmissionPayload(payload);
+
+    return this.requestJson<Judge0SubmissionTokenResponse>("/submissions?base64_encoded=true&wait=false", {
+      method: "POST",
+      body: JSON.stringify(encodedPayload),
+      validate: isJudge0SubmissionTokenResponse,
+    });
+  }
+
+  async getSubmission(token: string): Promise<Judge0SubmissionResponse> {
+    const encodedToken = encodeURIComponent(token);
+    const response = await this.requestJson<Judge0SubmissionResponse>(
+      `/submissions/${encodedToken}?base64_encoded=true`,
+      {
+        validate: isJudge0SubmissionResponse,
+      },
+    );
+
+    return this.decodeSubmissionResponse(response);
+  }
+
+  async waitForSubmission(token: string): Promise<Judge0SubmissionResponse> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= this.pollTimeoutMs) {
+      const response = await this.getSubmission(token);
+      if (!IN_PROGRESS_STATUS_IDS.has(response.status.id)) {
+        return response;
+      }
+
+      await this.delay(this.pollIntervalMs);
+    }
+
+    throw new Judge0ClientError(`Judge0 polling timed out for submission ${token}.`);
+  }
+
+  async createSubmissionAndWait(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
+    const { token } = await this.createSubmissionToken(payload);
+    return this.waitForSubmission(token);
+  }
+
+  private encodeSubmissionPayload(payload: Judge0SubmissionRequest): Judge0SubmissionRequest {
+    return {
       ...payload,
       source_code: this.encodeBase64(payload.source_code),
       stdin: this.encodeBase64(payload.stdin),
       expected_output: this.encodeBase64(payload.expected_output),
       base64_encoded: true,
     };
-
-    const response = await this.requestJson<Judge0SubmissionResponse>("/submissions?base64_encoded=true&wait=true", {
-      method: "POST",
-      body: JSON.stringify(encodedPayload),
-      validate: isJudge0SubmissionResponse,
-    });
-
-    return this.decodeSubmissionResponse(response);
   }
 
   private async requestJson<T>(
@@ -127,7 +185,7 @@ export class Judge0Client {
       validate: (value: unknown) => value is T;
     },
   ): Promise<T> {
-    if (!this.baseUrl) {
+    if (!this.activeBaseUrl) {
       throw new Judge0ClientError("Judge0 base URL is not configured.");
     }
 
@@ -146,6 +204,11 @@ export class Judge0Client {
       const payload = this.parsePayload(rawPayload);
 
       if (!response.ok) {
+        if (this.shouldUsePublicFallback(payload, response.status)) {
+          this.switchToPublicFallback();
+          return this.requestJson(path, options);
+        }
+
         throw new Judge0ClientError(
           this.extractApiErrorMessage(payload, response.status) ??
             `Judge0 request failed with status ${response.status}.`,
@@ -180,24 +243,27 @@ export class Judge0Client {
   }
 
   private buildUrl(path: string): string {
-    return new URL(path, `${this.baseUrl.replace(/\/+$/, "")}/`).toString();
+    return new URL(path, `${this.activeBaseUrl.replace(/\/+$/, "")}/`).toString();
   }
 
   private buildHeaders(): Record<string, string> {
-    if (!this.usesApiKey()) {
-      return {
-        "Content-Type": "application/json",
-      };
-    }
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "X-RapidAPI-Key": this.apiKey,
     };
 
+    if (!this.useRapidApiHeaders || !this.usesApiKey()) {
+      return headers;
+    }
+
+    headers["x-rapidapi-key"] = this.apiKey;
+
+    if (this.apiHost) {
+      headers["x-rapidapi-host"] = this.apiHost;
+      return headers;
+    }
+
     try {
-      const hostname = new URL(this.baseUrl).hostname;
-      headers["X-RapidAPI-Host"] = hostname;
+      headers["x-rapidapi-host"] = new URL(this.activeBaseUrl).hostname;
     } catch (error) {
       const judge0Error = error as { response?: { data?: unknown }; message?: string };
       console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
@@ -262,5 +328,35 @@ export class Judge0Client {
       compile_output: this.decodeBase64(response.compile_output),
       message: this.decodeBase64(response.message),
     };
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private shouldUsePublicFallback(payload: unknown, status: number): boolean {
+    if (!this.useRapidApiHeaders || this.activeBaseUrl === PUBLIC_FALLBACK_BASE_URL) {
+      return false;
+    }
+
+    if (status === 429) {
+      return true;
+    }
+
+    if (typeof payload === "object" && payload !== null) {
+      const message = (payload as { message?: unknown }).message;
+      if (typeof message === "string") {
+        const normalized = message.trim().toLowerCase();
+        return normalized.includes("not subscribed") || normalized.includes("too many requests");
+      }
+    }
+
+    return false;
+  }
+
+  private switchToPublicFallback(): void {
+    this.activeBaseUrl = PUBLIC_FALLBACK_BASE_URL;
+    this.useRapidApiHeaders = false;
+    this.languagesPromise = null;
   }
 }

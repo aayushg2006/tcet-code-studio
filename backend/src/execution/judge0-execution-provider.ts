@@ -146,9 +146,16 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       }
 
       const languageId = await this.resolveLanguageId(request.language);
-      const results = await Promise.all(
-        request.testCases.map((testCase) => this.executeTestCase(request, testCase, languageId)),
-      );
+      const results: TestExecutionOutcome[] = [];
+
+      for (const testCase of request.testCases) {
+        const result = await this.executeTestCase(request, testCase, languageId);
+        results.push(result);
+
+        if (result.status !== "ACCEPTED") {
+          break;
+        }
+      }
 
       const passedCount = results.filter((result) => result.status === "ACCEPTED").length;
       const runtimeMs = results.reduce((max, result) => Math.max(max, result.runtimeMs), 0);
@@ -244,7 +251,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     languageId: number,
   ): Promise<TestExecutionOutcome> {
     try {
-      const response = await this.client.createSubmission({
+      const response = await this.client.createSubmissionAndWait({
         source_code: request.code,
         language_id: languageId,
         stdin: testCase.input,
@@ -254,6 +261,8 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         memory_limit: request.memoryLimitMb * 1024,
         enable_network: false,
         redirect_stderr_to_stdout: false,
+        enable_per_process_and_thread_time_limit: true,
+        enable_per_process_and_thread_memory_limit: true,
       });
 
       return this.normalizeJudge0Response(response);

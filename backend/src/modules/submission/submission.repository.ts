@@ -31,6 +31,8 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
 
   return {
     id: String(data.id ?? submissionId),
+    queueJobId: typeof data.queueJobId === "string" ? data.queueJobId : null,
+    judge0Token: typeof data.judge0Token === "string" ? data.judge0Token : null,
     userEmail: String(data.userEmail ?? ""),
     userRole: normalizeRole(data.userRole),
     problemId: String(data.problemId ?? ""),
@@ -45,6 +47,8 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     totalCount: normalizeNumber(data.totalCount ?? data.totalTestCases, 0),
     executionProvider: typeof data.executionProvider === "string" ? data.executionProvider : env.EXECUTION_PROVIDER,
     ratingAwarded: normalizeNumber(data.ratingAwarded, 0),
+    stdout: typeof data.stdout === "string" ? data.stdout : null,
+    stderr: typeof data.stderr === "string" ? data.stderr : null,
     createdAt,
     updatedAt,
     judgedAt: toDate(data.judgedAt),

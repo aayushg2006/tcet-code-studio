@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,6 +9,7 @@ import {
   Settings,
   RotateCcw,
   CheckCircle2,
+  LoaderCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,18 +30,66 @@ import type {
   SubmissionResult,
   SubmissionStatus,
 } from "@/api/types";
+import { isSubmissionPending, pollSubmissionUntilComplete } from "./submissionPolling";
 
-const starterCode = `// Solution.cpp
+const STARTER_TEMPLATES: Partial<Record<ExecutableLanguage, string>> = {
+  cpp: `// Solution.cpp
 #include <bits/stdc++.h>
 using namespace std;
 
 class Solution {
 public:
+    // Read from cin if needed. The platform injects main() for Solution classes.
     vector<int> solve() {
         return {};
     }
 };
-`;
+`,
+  java: `// Solution.java
+import java.util.*;
+
+class Solution {
+    // Read from System.in if needed. The platform injects Main for Solution classes.
+    public List<Integer> solve() {
+        return new ArrayList<>();
+    }
+}
+`,
+  python: `# Solution.py
+class Solution:
+    # Read from stdin if needed. The platform injects the execution entrypoint.
+    def solve(self):
+        return []
+`,
+  javascript: `// Solution.js
+class Solution {
+  // Read from stdin if needed. The platform injects the execution entrypoint.
+  solve() {
+    return [];
+  }
+}
+`,
+};
+
+const FILE_EXTENSIONS: Partial<Record<ExecutableLanguage, string>> = {
+  cpp: "cpp",
+  java: "java",
+  python: "py",
+  javascript: "js",
+};
+
+function getStarterCode(language: ExecutableLanguage): string {
+  return (
+    STARTER_TEMPLATES[language] ??
+    `// Solution.${FILE_EXTENSIONS[language] ?? language}
+// Start coding here.
+`
+  );
+}
+
+function getSolutionFilename(language: ExecutableLanguage): string {
+  return `Solution.${FILE_EXTENSIONS[language] ?? language}`;
+}
 
 function formatStatus(status: SubmissionStatus): string {
   return toStatusLabel(status);
@@ -72,11 +121,21 @@ export default function ProblemDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
 
-  const [code, setCode] = useState(starterCode);
+  const [code, setCode] = useState(() => getStarterCode("cpp"));
   const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
   const [tab, setTab] = useState<"tests" | "console" | "subs">("tests");
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
+  const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
+  const [pendingSubmissionStatus, setPendingSubmissionStatus] = useState<SubmissionStatus | null>(null);
+  const pollingAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      pollingAbortRef.current?.abort();
+      pollingAbortRef.current = null;
+    };
+  }, []);
 
   const { data: problemEnvelope, isLoading: problemLoading, isError: problemError, error: problemErrorObj } = useQuery({
     queryKey: ["student-problem-detail", id],
@@ -95,8 +154,63 @@ export default function ProblemDetail() {
     [submissionsData?.items],
   );
 
+  const invalidateSubmissionViews = () => {
+    queryClient.invalidateQueries({ queryKey: ["student-problem-submissions", id] });
+    queryClient.invalidateQueries({ queryKey: ["student-profile"] });
+    queryClient.invalidateQueries({ queryKey: ["student-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["student-leaderboard"] });
+    queryClient.invalidateQueries({ queryKey: ["student-problems"] });
+  };
+
+  const beginSubmissionPolling = async (submissionId: string) => {
+    pollingAbortRef.current?.abort();
+    const controller = new AbortController();
+    pollingAbortRef.current = controller;
+    setPendingSubmissionId(submissionId);
+    setPendingSubmissionStatus("QUEUED");
+
+    try {
+      const finalSubmission = await pollSubmissionUntilComplete(
+        submissionId,
+        async (currentSubmissionId) => {
+          const response = await submissionsApi.getById(currentSubmissionId);
+          return response.submission;
+        },
+        {
+          intervalMs: 1_500,
+          timeoutMs: 120_000,
+          signal: controller.signal,
+          onUpdate: (submission) => {
+            setPendingSubmissionStatus(submission.status);
+            setSubmitResult(submission);
+          },
+        },
+      );
+
+      setSubmitResult(finalSubmission);
+      setRunResult(null);
+      setTab("subs");
+      invalidateSubmissionViews();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      toast.error((error as Error).message || "Polling failed");
+    } finally {
+      if (pollingAbortRef.current === controller) {
+        pollingAbortRef.current = null;
+        setPendingSubmissionId(null);
+        setPendingSubmissionStatus(null);
+      }
+    }
+  };
+
   const runMutation = useMutation({
     mutationFn: () => submissionsApi.run({ problemId: id, code, language }),
+    onMutate: () => {
+      setTab("console");
+    },
     onSuccess: (data) => {
       setRunResult(data.result);
       setSubmitResult(null);
@@ -110,14 +224,10 @@ export default function ProblemDetail() {
   const submitMutation = useMutation({
     mutationFn: () => submissionsApi.create({ problemId: id, code, language }),
     onSuccess: (data) => {
-      setSubmitResult(data.submission);
+      setSubmitResult(null);
       setRunResult(null);
-      setTab("tests");
-      queryClient.invalidateQueries({ queryKey: ["student-problem-submissions", id] });
-      queryClient.invalidateQueries({ queryKey: ["student-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["student-dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["student-leaderboard"] });
-      queryClient.invalidateQueries({ queryKey: ["student-problems"] });
+      setTab("subs");
+      void beginSubmissionPolling(data.submission_id);
     },
     onError: (error) => {
       toast.error((error as Error).message || "Submit failed");
@@ -142,6 +252,7 @@ export default function ProblemDetail() {
 
   const problem = problemEnvelope.problem;
   const testCases = problem.sampleTestCases;
+  const currentStarterCode = getStarterCode(language);
   const activeResult = submitResult
     ? {
         status: submitResult.status,
@@ -151,6 +262,12 @@ export default function ProblemDetail() {
         totalCount: submitResult.totalCount,
       }
     : runResult;
+  const isSubmissionProcessing = pendingSubmissionStatus ? isSubmissionPending(pendingSubmissionStatus) : false;
+  const activeConsoleOutput = runResult
+    ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}`.trim()
+    : submitResult
+      ? `${submitResult.stdout || ""}${submitResult.stderr ? `\n${submitResult.stderr}` : ""}`.trim()
+      : "";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -226,7 +343,15 @@ export default function ProblemDetail() {
               <div className="flex items-center gap-2">
                 <select
                   value={language}
-                  onChange={(event) => setLanguage(event.target.value as ExecutableLanguage)}
+                  onChange={(event) => {
+                    const nextLanguage = event.target.value as ExecutableLanguage;
+                    const shouldSwapStarter = code.trim().length === 0 || code === currentStarterCode;
+
+                    setLanguage(nextLanguage);
+                    if (shouldSwapStarter) {
+                      setCode(getStarterCode(nextLanguage));
+                    }
+                  }}
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
                 >
                   {EXECUTABLE_LANGUAGES.map((lang) => (
@@ -237,11 +362,17 @@ export default function ProblemDetail() {
                 </select>
                 <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
                   <FileCode2 className="h-3 w-3 text-accent" />
-                  <span className="font-mono-code">Solution.{language}</span>
+                  <span className="font-mono-code">{getSolutionFilename(language)}</span>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setCode(starterCode)} aria-label="Reset">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setCode(currentStarterCode)}
+                  aria-label="Reset"
+                >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
                 <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Settings">
@@ -272,7 +403,12 @@ export default function ProblemDetail() {
 
           <Card className="flex items-center justify-between gap-2 p-3 shadow-card">
             <div className="text-xs text-muted-foreground">
-              {activeResult ? (
+              {isSubmissionProcessing ? (
+                <span className="flex items-center gap-1.5">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-accent" />
+                  Processing submission {pendingSubmissionStatus ? `(${formatStatus(pendingSubmissionStatus)})` : "..."}
+                </span>
+              ) : activeResult ? (
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {formatStatus(activeResult.status)}
                 </span>
@@ -281,15 +417,16 @@ export default function ProblemDetail() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || submitMutation.isPending}>
+              <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}>
                 <Play className="mr-1 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
               </Button>
               <Button
                 onClick={() => submitMutation.mutate()}
-                disabled={runMutation.isPending || submitMutation.isPending}
+                disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}
                 className="bg-accent text-accent-foreground hover:bg-accent/90"
               >
-                <Send className="mr-1 h-4 w-4" /> {submitMutation.isPending ? "Submitting..." : "Submit"}
+                {isSubmissionProcessing ? <LoaderCircle className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />}
+                {submitMutation.isPending || isSubmissionProcessing ? "Processing..." : "Submit"}
               </Button>
             </div>
           </Card>
@@ -355,16 +492,26 @@ export default function ProblemDetail() {
             )}
             {tab === "console" && (
               <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
-                {runMutation.isPending || submitMutation.isPending
+                {runMutation.isPending
                   ? "$ Running solution against test cases..."
-                  : runResult
-                    ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}` || `Status: ${formatStatus(runResult.status)}`
-                    : "// stdout/stderr will appear here"}
+                  : isSubmissionProcessing
+                    ? `$ Submission ${pendingSubmissionId ?? ""} is ${pendingSubmissionStatus ? formatStatus(pendingSubmissionStatus) : "Processing"}...`
+                    : activeConsoleOutput || (activeResult ? `Status: ${formatStatus(activeResult.status)}` : "// stdout/stderr will appear here")}
               </pre>
             )}
             {tab === "subs" && (
               <div className="space-y-2">
-                {submissions.length === 0 && <div className="text-xs text-muted-foreground">No submissions yet.</div>}
+                {isSubmissionProcessing && (
+                  <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 p-2 text-xs">
+                    <StatusBadge status={formatStatus(pendingSubmissionStatus ?? "QUEUED")} />
+                    <span className="font-mono-code text-muted-foreground">processing</span>
+                    <span className="flex items-center gap-1 text-accent">
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      live
+                    </span>
+                  </div>
+                )}
+                {submissions.length === 0 && !isSubmissionProcessing && <div className="text-xs text-muted-foreground">No submissions yet.</div>}
                 {submissions.map((submission) => (
                   <div key={submission.id} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
                     <StatusBadge status={formatStatus(submission.status)} />

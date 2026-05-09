@@ -13,7 +13,7 @@ export function createSubmissionController(submissionService: SubmissionService)
     async createSubmission(req: Request, res: Response): Promise<void> {
       const payload = submissionRequestSchema.parse(req.body);
       const submission = await submissionService.createSubmission(req.user!, payload);
-      res.status(201).json({ submission });
+      res.status(202).json(submission);
     },
 
     async listSubmissions(req: Request, res: Response): Promise<void> {

@@ -1,19 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { env } from "../../config/env";
+import { wrapSubmissionCode } from "../../execution/code-wrapper";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
-import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
-import { isFinalSubmissionStatus } from "../../shared/utils/normalize";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { SupportedLanguage } from "../../shared/types/domain";
-import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
+import { isFinalSubmissionStatus } from "../../shared/utils/normalize";
+import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
+import type { ExecutionProvider, ExecutionResult } from "../../execution/execution-provider";
+import type { SubmissionQueue } from "../../queue/submission-queue";
 import { buildLeaderboardEntryFromUser } from "../leaderboard/leaderboard.model";
+import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
 import type { ProblemRecord } from "../problem/problem.model";
 import type { ProblemRepository } from "../problem/problem.repository";
 import type { UserRecord } from "../user/user.model";
 import type { UserRepository } from "../user/user.repository";
-import type { ExecutionProvider, ExecutionResult } from "../../execution/execution-provider";
-import type { SubmissionRunResponse, SubmissionRecord, SubmissionResponse } from "./submission.model";
+import type {
+  SubmissionQueueReceipt,
+  SubmissionRecord,
+  SubmissionResponse,
+  SubmissionRunResponse,
+} from "./submission.model";
 import { toSubmissionResponse } from "./submission.model";
 import type { SubmissionListFilters, SubmissionRepository } from "./submission.repository";
 
@@ -21,7 +28,8 @@ export type { ExecutionProvider } from "../../execution/execution-provider";
 
 export interface SubmissionService {
   runSubmission(user: AuthenticatedUser, input: SubmissionWriteInput): Promise<SubmissionRunResponse>;
-  createSubmission(user: AuthenticatedUser, input: SubmissionWriteInput): Promise<SubmissionResponse>;
+  createSubmission(user: AuthenticatedUser, input: SubmissionWriteInput): Promise<SubmissionQueueReceipt>;
+  processQueuedSubmission(submissionId: string, queueJobId?: string): Promise<SubmissionResponse>;
   listSubmissions(
     user: AuthenticatedUser,
     query: SubmissionListQuery,
@@ -35,6 +43,7 @@ interface SubmissionServiceDependencies {
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
   executionProvider: ExecutionProvider;
+  submissionQueue: SubmissionQueue;
   now: () => Date;
 }
 
@@ -119,6 +128,18 @@ function buildSubmissionRunResponse(
     executionProvider: result.provider,
     stdout: result.stdout,
     stderr: result.stderr,
+  };
+}
+
+function buildInternalErrorResult(totalCount: number, message: string): ExecutionResult {
+  return {
+    status: "INTERNAL_ERROR",
+    runtimeMs: 0,
+    memoryKb: 0,
+    passedCount: 0,
+    totalCount,
+    provider: env.EXECUTION_PROVIDER,
+    stderr: message,
   };
 }
 
@@ -259,6 +280,8 @@ async function finalizeSubmission(
     passedCount: result.passedCount,
     totalCount: result.totalCount,
     executionProvider: result.provider,
+    stdout: result.stdout ?? existingSubmission.stdout,
+    stderr: result.stderr ?? existingSubmission.stderr,
     judgedAt: now,
     finalizationAppliedAt: now,
     updatedAt: now,
@@ -298,12 +321,33 @@ async function finalizeSubmission(
   return updatedSubmission;
 }
 
+async function markSubmissionAsInternalError(
+  dependencies: SubmissionServiceDependencies,
+  submissionId: string,
+  message: string,
+): Promise<SubmissionRecord | null> {
+  const submission = await dependencies.submissionRepository.getById(submissionId);
+  if (!submission) {
+    return null;
+  }
+
+  if (submission.finalizationAppliedAt && isFinalSubmissionStatus(submission.status)) {
+    return submission;
+  }
+
+  return finalizeSubmission(
+    dependencies,
+    submissionId,
+    buildInternalErrorResult(submission.totalCount, message),
+  );
+}
+
 export function createSubmissionService(dependencies: SubmissionServiceDependencies): SubmissionService {
   return {
     async runSubmission(user, input) {
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
       const result = await dependencies.executionProvider.executeRun({
-        code: input.code,
+        code: wrapSubmissionCode(input.language, input.code),
         language: input.language,
         testCases: problem.sampleTestCases,
         problemId: problem.id,
@@ -322,6 +366,8 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
       const submission: SubmissionRecord = {
         id: `submission_${randomUUID()}`,
+        queueJobId: null,
+        judge0Token: null,
         userEmail: user.email,
         userRole: user.role,
         problemId: problem.id,
@@ -336,6 +382,8 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         totalCount: problem.sampleTestCases.length + problem.hiddenTestCases.length,
         executionProvider: env.EXECUTION_PROVIDER,
         ratingAwarded: 0,
+        stdout: null,
+        stderr: null,
         createdAt: now,
         updatedAt: now,
         judgedAt: null,
@@ -344,17 +392,71 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
       await dependencies.submissionRepository.create(submission);
 
-      const result = await dependencies.executionProvider.executeSubmission({
-        code: input.code,
-        language: input.language,
-        testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
-        problemId: problem.id,
-        timeLimitSeconds: problem.timeLimitSeconds,
-        memoryLimitMb: problem.memoryLimitMb,
-      });
+      try {
+        const queueJobId = await dependencies.submissionQueue.enqueue(submission.id);
+        await dependencies.submissionRepository.save({
+          ...submission,
+          queueJobId,
+          updatedAt: dependencies.now(),
+        });
 
-      const finalizedSubmission = await finalizeSubmission(dependencies, submission.id, result);
-      return toSubmissionResponse(finalizedSubmission, true);
+        return {
+          submission_id: submission.id,
+          status: "queued",
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to enqueue submission.";
+        await markSubmissionAsInternalError(dependencies, submission.id, message);
+        throw new AppError(500, "Failed to queue submission");
+      }
+    },
+
+    async processQueuedSubmission(submissionId, queueJobId) {
+      const existingSubmission = await dependencies.submissionRepository.getById(submissionId);
+      if (!existingSubmission) {
+        throw new AppError(404, "Submission not found");
+      }
+
+      if (existingSubmission.finalizationAppliedAt && isFinalSubmissionStatus(existingSubmission.status)) {
+        return toSubmissionResponse(existingSubmission, true);
+      }
+
+      const problem = await dependencies.problemRepository.getById(existingSubmission.problemId);
+      if (!problem) {
+        throw new AppError(404, "Problem not found");
+      }
+
+      const runningSubmission: SubmissionRecord = {
+        ...existingSubmission,
+        queueJobId: queueJobId || existingSubmission.queueJobId,
+        status: "RUNNING",
+        stderr: null,
+        updatedAt: dependencies.now(),
+      };
+
+      await dependencies.submissionRepository.save(runningSubmission);
+
+      try {
+        const result = await dependencies.executionProvider.executeSubmission({
+          code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
+          language: runningSubmission.language,
+          testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
+          problemId: problem.id,
+          timeLimitSeconds: problem.timeLimitSeconds,
+          memoryLimitMb: problem.memoryLimitMb,
+        });
+
+        const finalizedSubmission = await finalizeSubmission(dependencies, runningSubmission.id, result);
+        return toSubmissionResponse(finalizedSubmission, true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Background submission execution failed.";
+        const failedSubmission = await markSubmissionAsInternalError(dependencies, runningSubmission.id, message);
+        if (!failedSubmission) {
+          throw error;
+        }
+
+        return toSubmissionResponse(failedSubmission, true);
+      }
     },
 
     async listSubmissions(user, query) {

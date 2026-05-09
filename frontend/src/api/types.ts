@@ -167,6 +167,8 @@ export interface Submission {
   totalCount: number;
   executionProvider: string;
   ratingAwarded: number;
+  stdout?: string | null;
+  stderr?: string | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -175,6 +177,11 @@ export interface Submission {
 
 export interface SubmissionEnvelope {
   submission: Submission;
+}
+
+export interface SubmissionQueueReceipt {
+  submission_id: string;
+  status: "queued";
 }
 
 export interface LeaderboardItem {

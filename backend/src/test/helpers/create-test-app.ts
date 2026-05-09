@@ -3,6 +3,7 @@ import { authMiddleware } from "../../middleware/auth";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
 import { createProblemService } from "../../modules/problem/problem.service";
 import { createSubmissionService } from "../../modules/submission/submission.service";
+import type { SubmissionQueue } from "../../queue/submission-queue";
 import { createUserService } from "../../modules/user/user.service";
 import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
@@ -24,6 +25,11 @@ export function createTestApp() {
     tick += 1;
     return new Date(Date.UTC(2026, 4, 7, 0, 0, tick));
   };
+  const submissionQueue: SubmissionQueue = {
+    async enqueue(submissionId) {
+      return submissionId;
+    },
+  };
 
   const dependencies: ApplicationDependencies = {
     authMiddleware,
@@ -43,6 +49,7 @@ export function createTestApp() {
       userRepository,
       leaderboardRepository,
       executionProvider: new StubExecutionProvider(),
+      submissionQueue,
       now,
     }),
     leaderboardService: createLeaderboardService({

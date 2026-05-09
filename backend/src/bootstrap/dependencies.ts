@@ -19,6 +19,7 @@ import {
   type ExecutionProvider,
   type SubmissionService,
 } from "../modules/submission/submission.service";
+import { BullMQSubmissionQueue, type SubmissionQueue } from "../queue/submission-queue";
 import { FirestoreUserRepository, type UserRepository } from "../modules/user/user.repository";
 import { createUserService, type UserService } from "../modules/user/user.service";
 
@@ -44,6 +45,7 @@ export interface ApplicationDependencies extends ServiceBundle {
 export interface DependencyOverrides {
   authMiddleware?: RequestHandler;
   executionProvider?: ExecutionProvider;
+  submissionQueue?: SubmissionQueue;
   repositories?: Partial<RepositoryBundle>;
   now?: () => Date;
 }
@@ -79,6 +81,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
     executionProvider: overrides.executionProvider ?? new Judge0ExecutionProvider(),
+    submissionQueue: overrides.submissionQueue ?? new BullMQSubmissionQueue(),
     now,
   });
 

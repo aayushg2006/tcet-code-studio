@@ -4,6 +4,8 @@ import { toIsoString } from "../../shared/utils/date";
 
 export interface SubmissionRecord {
   id: string;
+  queueJobId: string | null;
+  judge0Token: string | null;
   userEmail: string;
   userRole: UserRole;
   problemId: string;
@@ -18,10 +20,17 @@ export interface SubmissionRecord {
   totalCount: number;
   executionProvider: string;
   ratingAwarded: number;
+  stdout: string | null;
+  stderr: string | null;
   createdAt: Date;
   updatedAt: Date;
   judgedAt: Date | null;
   finalizationAppliedAt: Date | null;
+}
+
+export interface SubmissionQueueReceipt {
+  submission_id: string;
+  status: "queued";
 }
 
 export interface SubmissionResponse {
@@ -38,6 +47,8 @@ export interface SubmissionResponse {
   totalCount: number;
   executionProvider: string;
   ratingAwarded: number;
+  stdout?: string | null;
+  stderr?: string | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -72,6 +83,8 @@ export function toSubmissionResponse(submission: SubmissionRecord, includeCode =
     totalCount: submission.totalCount,
     executionProvider: submission.executionProvider,
     ratingAwarded: submission.ratingAwarded,
+    stdout: submission.stdout,
+    stderr: submission.stderr,
     createdAt: toIsoString(submission.createdAt) ?? new Date(0).toISOString(),
     updatedAt: toIsoString(submission.updatedAt) ?? new Date(0).toISOString(),
     judgedAt: toIsoString(submission.judgedAt),
