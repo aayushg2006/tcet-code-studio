@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import { env } from "../config/env";
 import { db } from "../firebase";
-import { StubExecutionProvider } from "../execution/stub-execution-provider";
+import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
 import { authMiddleware } from "../middleware/auth";
 import {
   FirestoreLeaderboardRepository,
@@ -78,7 +78,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
-    executionProvider: overrides.executionProvider ?? new StubExecutionProvider(),
+    executionProvider: overrides.executionProvider ?? new Judge0ExecutionProvider(),
     now,
   });
 
