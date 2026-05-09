@@ -1,4 +1,5 @@
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
+import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
 import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTestCase } from "./execution-provider";
 import {
   Judge0Client,
@@ -23,7 +24,7 @@ interface TestExecutionOutcome {
 export class Judge0ExecutionProvider implements ExecutionProvider {
   private readonly client: Judge0Client;
 
-  private readonly fallbackLanguageIds: LanguageIdMap = {
+  private readonly cloudFallbackLanguageIds: LanguageIdMap = {
     c: 103,
     cpp: 105,
     java: 91,
@@ -41,6 +42,29 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     swift: 83,
     dart: 90,
     scala: 112,
+    elixir: 57,
+    erlang: 58,
+    racket: null,
+  };
+
+  private readonly localFallbackLanguageIds: LanguageIdMap = {
+    c: 50,
+    cpp: 54,
+    java: 62,
+    javascript: 63,
+    python: 71,
+    ruby: 72,
+    arduino: null,
+    go: 60,
+    rust: 73,
+    csharp: 51,
+    php: 68,
+    typescript: 74,
+    assembly8086: 45,
+    kotlin: 78,
+    swift: 83,
+    dart: 90,
+    scala: 81,
     elixir: 57,
     erlang: 58,
     racket: null,
@@ -85,66 +109,85 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
   }
 
   async executeRun(request: ExecutionRequest): Promise<ExecutionResult> {
-    const sample = request.testCases[0];
+    try {
+      const sample = request.testCases[0];
 
-    if (!sample) {
-      return this.buildInternalErrorResult(0, "No sample test case configured.");
+      if (!sample) {
+        return this.buildInternalErrorResult(0, "No sample test case configured.");
+      }
+
+      const languageId = await this.resolveLanguageId(request.language);
+      const result = await this.executeTestCase(request, sample, languageId);
+
+      return {
+        status: result.status,
+        runtimeMs: result.runtimeMs,
+        memoryKb: result.memoryKb,
+        passedCount: result.status === "ACCEPTED" ? 1 : 0,
+        totalCount: 1,
+        provider: PROVIDER_NAME,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      return this.buildInternalErrorResult(
+        request.testCases.length > 0 ? 1 : 0,
+        error instanceof Error ? error.message : "Judge0 run execution failed.",
+      );
     }
-
-    const languageId = await this.resolveLanguageId(request.language);
-    const result = await this.executeTestCase(request, sample, languageId);
-
-    return {
-      status: result.status,
-      runtimeMs: result.runtimeMs,
-      memoryKb: result.memoryKb,
-      passedCount: result.status === "ACCEPTED" ? 1 : 0,
-      totalCount: 1,
-      provider: PROVIDER_NAME,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
   }
 
   async executeSubmission(request: ExecutionRequest): Promise<ExecutionResult> {
-    if (request.testCases.length === 0) {
-      return this.buildInternalErrorResult(0, "No test cases configured.");
+    try {
+      if (request.testCases.length === 0) {
+        return this.buildInternalErrorResult(0, "No test cases configured.");
+      }
+
+      const languageId = await this.resolveLanguageId(request.language);
+      const results = await Promise.all(
+        request.testCases.map((testCase) => this.executeTestCase(request, testCase, languageId)),
+      );
+
+      const passedCount = results.filter((result) => result.status === "ACCEPTED").length;
+      const runtimeMs = results.reduce((max, result) => Math.max(max, result.runtimeMs), 0);
+      const memoryKb = results.reduce((max, result) => Math.max(max, result.memoryKb), 0);
+      const status = this.selectFinalStatus(results);
+      const diagnostic = this.pickAggregateDiagnostic(results, status);
+
+      return {
+        status,
+        runtimeMs,
+        memoryKb,
+        passedCount,
+        totalCount: results.length,
+        provider: PROVIDER_NAME,
+        stdout: diagnostic?.stdout,
+        stderr: diagnostic?.stderr,
+      };
+    } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      return this.buildInternalErrorResult(
+        request.testCases.length,
+        error instanceof Error ? error.message : "Judge0 submission execution failed.",
+      );
     }
-
-    const languageId = await this.resolveLanguageId(request.language);
-    const results = await Promise.all(
-      request.testCases.map((testCase) => this.executeTestCase(request, testCase, languageId)),
-    );
-
-    const passedCount = results.filter((result) => result.status === "ACCEPTED").length;
-    const runtimeMs = results.reduce((max, result) => Math.max(max, result.runtimeMs), 0);
-    const memoryKb = results.reduce((max, result) => Math.max(max, result.memoryKb), 0);
-    const status = this.selectFinalStatus(results);
-    const diagnostic = this.pickAggregateDiagnostic(results, status);
-
-    return {
-      status,
-      runtimeMs,
-      memoryKb,
-      passedCount,
-      totalCount: results.length,
-      provider: PROVIDER_NAME,
-      stdout: diagnostic?.stdout,
-      stderr: diagnostic?.stderr,
-    };
   }
 
   private async resolveLanguageId(language: ExecutableLanguage): Promise<number> {
-    this.assertLanguageAllowed(language);
+    const normalizedLanguage = this.validateLanguage(language);
+    this.assertLanguageAllowed(normalizedLanguage);
 
-    const fallbackId = this.fallbackLanguageIds[language];
+    const fallbackId = this.getFallbackLanguageIds()[normalizedLanguage];
     if (fallbackId === null) {
-      throw new Error(`Judge0 does not provide a first-class mapping for "${language}".`);
+      throw new Error(`Judge0 does not provide a first-class mapping for "${normalizedLanguage}".`);
     }
 
     try {
       const languages = await this.client.getLanguages();
-      const preferredNames = this.preferredLanguageNames[language];
+      const preferredNames = this.preferredLanguageNames[normalizedLanguage];
 
       for (const preferredName of preferredNames) {
         const match = languages.find((candidate) => candidate.name === preferredName);
@@ -158,6 +201,9 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         return fallbackMatch.id;
       }
     } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+
       if (!(error instanceof Judge0ClientError)) {
         throw error;
       }
@@ -170,6 +216,26 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     if (EDITOR_ONLY_BLOCKLIST.has(language as string)) {
       throw new Error(`Editor-only language "${language}" must not be executed.`);
     }
+  }
+
+  private validateLanguage(language: ExecutableLanguage): ExecutableLanguage {
+    const normalizedInput = String(language).trim().toLowerCase();
+    const normalized =
+      normalizedInput === "golang" ? "go" : tryNormalizeSupportedLanguage(normalizedInput);
+
+    if (!normalized) {
+      throw new Error(`Unsupported language "${String(language)}".`);
+    }
+
+    if (!isExecutableLanguage(normalized)) {
+      throw new Error(`Editor-only language "${normalized}" must not be executed.`);
+    }
+
+    return normalized;
+  }
+
+  private getFallbackLanguageIds(): LanguageIdMap {
+    return this.client.usesApiKey() ? this.cloudFallbackLanguageIds : this.localFallbackLanguageIds;
   }
 
   private async executeTestCase(
@@ -192,12 +258,15 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
 
       return this.normalizeJudge0Response(response);
     } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+
       if (error instanceof Judge0ClientError) {
         return {
           status: "INTERNAL_ERROR",
           runtimeMs: 0,
           memoryKb: 0,
-          stderr: "Judge0 request failed.",
+          stderr: error.message,
         };
       }
 

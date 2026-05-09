@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export interface Judge0Language {
@@ -15,6 +17,7 @@ export interface Judge0SubmissionRequest {
   memory_limit: number;
   enable_network: boolean;
   redirect_stderr_to_stdout: boolean;
+  base64_encoded?: boolean;
 }
 
 interface Judge0Status {
@@ -34,10 +37,12 @@ export interface Judge0SubmissionResponse {
 
 export class Judge0ClientError extends Error {
   readonly code = "INTERNAL_ERROR" as const;
+  readonly response?: { data?: unknown; status?: number };
 
-  constructor(message = "Judge0 request failed.") {
+  constructor(message = "Judge0 request failed.", response?: { data?: unknown; status?: number }) {
     super(message);
     this.name = "Judge0ClientError";
+    this.response = response;
   }
 }
 
@@ -75,6 +80,10 @@ export class Judge0Client {
   private readonly apiKey = process.env.JUDGE0_API_KEY?.trim() ?? "";
   private languagesPromise: Promise<Judge0Language[]> | null = null;
 
+  usesApiKey(): boolean {
+    return this.apiKey.length > 0;
+  }
+
   async getLanguages(): Promise<Judge0Language[]> {
     if (!this.languagesPromise) {
       const request = this.requestJson<Judge0Language[]>("/languages", {
@@ -82,6 +91,8 @@ export class Judge0Client {
       });
 
       this.languagesPromise = request.catch((error: unknown) => {
+        const judge0Error = error as { response?: { data?: unknown }; message?: string };
+        console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
         this.languagesPromise = null;
         throw error;
       });
@@ -91,11 +102,21 @@ export class Judge0Client {
   }
 
   async createSubmission(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
-    return this.requestJson<Judge0SubmissionResponse>("/submissions?wait=true", {
+    const encodedPayload: Judge0SubmissionRequest = {
+      ...payload,
+      source_code: this.encodeBase64(payload.source_code),
+      stdin: this.encodeBase64(payload.stdin),
+      expected_output: this.encodeBase64(payload.expected_output),
+      base64_encoded: true,
+    };
+
+    const response = await this.requestJson<Judge0SubmissionResponse>("/submissions?base64_encoded=true&wait=true", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(encodedPayload),
       validate: isJudge0SubmissionResponse,
     });
+
+    return this.decodeSubmissionResponse(response);
   }
 
   private async requestJson<T>(
@@ -106,8 +127,8 @@ export class Judge0Client {
       validate: (value: unknown) => value is T;
     },
   ): Promise<T> {
-    if (!this.baseUrl || !this.apiKey) {
-      throw new Judge0ClientError("Judge0 credentials are not configured.");
+    if (!this.baseUrl) {
+      throw new Judge0ClientError("Judge0 base URL is not configured.");
     }
 
     const controller = new AbortController();
@@ -121,14 +142,29 @@ export class Judge0Client {
         signal: controller.signal,
       });
 
-      const payload = (await response.json().catch(() => null)) as unknown;
+      const rawPayload = await response.text();
+      const payload = this.parsePayload(rawPayload);
 
-      if (!response.ok || !options.validate(payload)) {
-        throw new Judge0ClientError();
+      if (!response.ok) {
+        throw new Judge0ClientError(
+          this.extractApiErrorMessage(payload, response.status) ??
+            `Judge0 request failed with status ${response.status}.`,
+          { data: payload, status: response.status },
+        );
+      }
+
+      if (!options.validate(payload)) {
+        throw new Judge0ClientError("Judge0 returned an unexpected response payload.", {
+          data: payload,
+          status: response.status,
+        });
       }
 
       return payload;
     } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+
       if (error instanceof Judge0ClientError) {
         throw error;
       }
@@ -137,7 +173,7 @@ export class Judge0Client {
         throw new Judge0ClientError("Judge0 request timed out.");
       }
 
-      throw new Judge0ClientError();
+      throw new Judge0ClientError(error instanceof Error ? error.message : "Judge0 request failed.");
     } finally {
       clearTimeout(timeout);
     }
@@ -148,23 +184,83 @@ export class Judge0Client {
   }
 
   private buildHeaders(): Record<string, string> {
+    if (!this.usesApiKey()) {
+      return {
+        "Content-Type": "application/json",
+      };
+    }
+
     const headers: Record<string, string> = {
-      Accept: "application/json",
       "Content-Type": "application/json",
-      "X-Auth-Token": this.apiKey,
+      "X-RapidAPI-Key": this.apiKey,
     };
 
     try {
       const hostname = new URL(this.baseUrl).hostname;
-
-      if (hostname.endsWith(".rapidapi.com")) {
-        headers["X-RapidAPI-Key"] = this.apiKey;
-        headers["X-RapidAPI-Host"] = hostname;
-      }
-    } catch {
-      // Invalid URLs are handled as request failures by fetch.
+      headers["X-RapidAPI-Host"] = hostname;
+    } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
     }
 
     return headers;
+  }
+
+  private parsePayload(rawPayload: string): unknown {
+    if (!rawPayload) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(rawPayload) as unknown;
+    } catch {
+      return rawPayload;
+    }
+  }
+
+  private extractApiErrorMessage(payload: unknown, status: number): string | null {
+    if (typeof payload === "string" && payload.trim().length > 0) {
+      return `Judge0 request failed with status ${status}: ${payload}`;
+    }
+
+    if (typeof payload === "object" && payload !== null) {
+      const candidate = payload as { message?: unknown; error?: unknown };
+
+      if (typeof candidate.message === "string" && candidate.message.trim().length > 0) {
+        return `Judge0 request failed with status ${status}: ${candidate.message}`;
+      }
+
+      if (typeof candidate.error === "string" && candidate.error.trim().length > 0) {
+        return `Judge0 request failed with status ${status}: ${candidate.error}`;
+      }
+    }
+
+    return null;
+  }
+
+  private encodeBase64(value: string): string {
+    return Buffer.from(value, "utf8").toString("base64");
+  }
+
+  private decodeBase64(value: string | null): string | null {
+    if (value === null) {
+      return null;
+    }
+
+    try {
+      return Buffer.from(value, "base64").toString("utf8");
+    } catch {
+      return value;
+    }
+  }
+
+  private decodeSubmissionResponse(response: Judge0SubmissionResponse): Judge0SubmissionResponse {
+    return {
+      ...response,
+      stdout: this.decodeBase64(response.stdout),
+      stderr: this.decodeBase64(response.stderr),
+      compile_output: this.decodeBase64(response.compile_output),
+      message: this.decodeBase64(response.message),
+    };
   }
 }
