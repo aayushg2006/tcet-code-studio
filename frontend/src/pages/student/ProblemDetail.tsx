@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Editor from "@monaco-editor/react";
+import type * as MonacoEditor from "monaco-editor";
 import {
   Play,
   Send,
   ChevronLeft,
   FileCode2,
-  Settings,
   RotateCcw,
   CheckCircle2,
   LoaderCircle,
@@ -19,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { cn } from "@/lib/utils";
 import { submissionsApi, problemsApi } from "@/api/services";
+import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
 import {
   EXECUTABLE_LANGUAGES,
   toLanguageLabel,
@@ -130,8 +132,13 @@ export default function ProblemDetail() {
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
   const [pendingSubmissionStatus, setPendingSubmissionStatus] = useState<SubmissionStatus | null>(null);
+  const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
   const pollingAbortRef = useRef<AbortController | null>(null);
+  const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const languageRef = useRef<ExecutableLanguage>("cpp");
   const code = draftsByLanguage[language] ?? getStarterCode(language);
+
+  languageRef.current = language;
 
   useEffect(() => {
     return () => {
@@ -152,7 +159,20 @@ export default function ProblemDetail() {
     setSubmitResult(null);
     setPendingSubmissionId(null);
     setPendingSubmissionStatus(null);
+    setCursorPosition({ lineNumber: 1, column: 1 });
   }, [id]);
+
+  const handleFormatCode = async () => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    try {
+      await formatCodeInEditor(editorRef.current, language);
+    } catch (error) {
+      toast.error((error as Error).message || "Format failed");
+    }
+  };
 
   const { data: problemEnvelope, isLoading: problemLoading, isError: problemError, error: problemErrorObj } = useQuery({
     queryKey: ["student-problem-detail", id],
@@ -285,6 +305,7 @@ export default function ProblemDetail() {
     : submitResult
       ? `${submitResult.stdout || ""}${submitResult.stderr ? `\n${submitResult.stderr}` : ""}`.trim()
       : "";
+  const lineCount = code.split("\n").length;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -387,6 +408,13 @@ export default function ProblemDetail() {
               </div>
               <div className="flex items-center gap-1">
                 <Button
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => void handleFormatCode()}
+                >
+                  Format
+                </Button>
+                <Button
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7"
@@ -400,33 +428,66 @@ export default function ProblemDetail() {
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Settings">
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
               </div>
             </div>
-            <div className="grid min-h-[360px] flex-1 grid-cols-[3rem_1fr] bg-[hsl(220_50%_8%)] font-mono-code text-sm text-[hsl(40_30%_92%)] dark:bg-background">
-              <div className="select-none border-r border-[hsl(220_30%_18%)] py-3 pr-2 text-right text-xs text-[hsl(220_15%_50%)]">
-                {code.split("\n").map((_, index) => (
-                  <div key={index} className="leading-6">
-                    {index + 1}
-                  </div>
-                ))}
-              </div>
-              <textarea
+            <div className="min-h-[360px] flex-1 bg-[hsl(220_50%_8%)]">
+              <Editor
+                beforeMount={(monaco) => {
+                  configureCodeEditor(monaco);
+                }}
+                onMount={(editor, monaco) => {
+                  editorRef.current = editor;
+                  setCursorPosition(editor.getPosition() ?? { lineNumber: 1, column: 1 });
+
+                  editor.onDidChangeCursorPosition((event) => {
+                    setCursorPosition(event.position);
+                  });
+
+                  editor.addAction({
+                    id: "tcet.format-code",
+                    label: "Format Code",
+                    keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+                    run: async (currentEditor) => {
+                      await formatCodeInEditor(currentEditor, languageRef.current);
+                    },
+                  });
+                }}
+                path={`${id}/${language}/${getSolutionFilename(language)}`}
+                height="100%"
+                language={getMonacoLanguage(language)}
+                theme="vs-dark"
                 value={code}
-                onChange={(event) =>
+                onChange={(nextValue) =>
                   setDraftsByLanguage((currentDrafts) => ({
                     ...currentDrafts,
-                    [language]: event.target.value,
+                    [language]: nextValue ?? "",
                   }))
                 }
-                spellCheck={false}
-                className="w-full resize-none bg-transparent p-3 text-sm leading-6 outline-none"
+                options={{
+                  automaticLayout: true,
+                  autoIndent: "full",
+                  bracketPairColorization: { enabled: true },
+                  cursorBlinking: "smooth",
+                  fontFamily: "var(--font-mono, 'Fira Code', monospace)",
+                  fontLigatures: true,
+                  fontSize: 14,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  glyphMargin: false,
+                  lineHeight: 24,
+                  minimap: { enabled: false },
+                  padding: { top: 12, bottom: 12 },
+                  renderLineHighlight: "all",
+                  roundedSelection: true,
+                  scrollBeyondLastLine: false,
+                  smoothScrolling: true,
+                  tabSize: 4,
+                  wordWrap: "off",
+                }}
               />
             </div>
             <div className="flex items-center justify-between border-t border-border bg-secondary/50 px-3 py-1.5 font-mono-code text-[11px] text-muted-foreground">
-              <span>Ln {code.split("\n").length}, Col 1</span>
+              <span>Ln {cursorPosition.lineNumber}/{lineCount}, Col {cursorPosition.column}</span>
               <span>UTF-8 {"\u2022"} LF {"\u2022"} {toLanguageLabel(language)}</span>
             </div>
           </Card>
