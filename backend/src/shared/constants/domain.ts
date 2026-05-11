@@ -34,7 +34,7 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
   "erlang",
   "racket",
 ];
-export const EDITOR_ONLY_LANGUAGES: EditorOnlyLanguage[] = ["vanilla", "react", "html", "css"];
+export const EDITOR_ONLY_LANGUAGES: EditorOnlyLanguage[] = ["react", "html", "css"];
 export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
   (language): language is ExecutableLanguage => !EDITOR_ONLY_LANGUAGES.includes(language as EditorOnlyLanguage),
 );

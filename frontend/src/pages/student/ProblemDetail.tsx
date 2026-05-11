@@ -121,14 +121,17 @@ export default function ProblemDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
 
-  const [code, setCode] = useState(() => getStarterCode("cpp"));
   const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
+  const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<ExecutableLanguage, string>>>({
+    cpp: getStarterCode("cpp"),
+  });
   const [tab, setTab] = useState<"tests" | "console" | "subs">("tests");
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
   const [pendingSubmissionStatus, setPendingSubmissionStatus] = useState<SubmissionStatus | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
+  const code = draftsByLanguage[language] ?? getStarterCode(language);
 
   useEffect(() => {
     return () => {
@@ -136,6 +139,20 @@ export default function ProblemDetail() {
       pollingAbortRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    pollingAbortRef.current?.abort();
+    pollingAbortRef.current = null;
+    setLanguage("cpp");
+    setDraftsByLanguage({
+      cpp: getStarterCode("cpp"),
+    });
+    setTab("tests");
+    setRunResult(null);
+    setSubmitResult(null);
+    setPendingSubmissionId(null);
+    setPendingSubmissionStatus(null);
+  }, [id]);
 
   const { data: problemEnvelope, isLoading: problemLoading, isError: problemError, error: problemErrorObj } = useQuery({
     queryKey: ["student-problem-detail", id],
@@ -345,12 +362,15 @@ export default function ProblemDetail() {
                   value={language}
                   onChange={(event) => {
                     const nextLanguage = event.target.value as ExecutableLanguage;
-                    const shouldSwapStarter = code.trim().length === 0 || code === currentStarterCode;
-
+                    setDraftsByLanguage((currentDrafts) =>
+                      currentDrafts[nextLanguage]
+                        ? currentDrafts
+                        : {
+                            ...currentDrafts,
+                            [nextLanguage]: getStarterCode(nextLanguage),
+                          },
+                    );
                     setLanguage(nextLanguage);
-                    if (shouldSwapStarter) {
-                      setCode(getStarterCode(nextLanguage));
-                    }
                   }}
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
                 >
@@ -370,7 +390,12 @@ export default function ProblemDetail() {
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7"
-                  onClick={() => setCode(currentStarterCode)}
+                  onClick={() =>
+                    setDraftsByLanguage((currentDrafts) => ({
+                      ...currentDrafts,
+                      [language]: currentStarterCode,
+                    }))
+                  }
                   aria-label="Reset"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
@@ -390,7 +415,12 @@ export default function ProblemDetail() {
               </div>
               <textarea
                 value={code}
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) =>
+                  setDraftsByLanguage((currentDrafts) => ({
+                    ...currentDrafts,
+                    [language]: event.target.value,
+                  }))
+                }
                 spellCheck={false}
                 className="w-full resize-none bg-transparent p-3 text-sm leading-6 outline-none"
               />

@@ -20,6 +20,7 @@ import type {
   SubmissionRecord,
   SubmissionResponse,
   SubmissionRunResponse,
+  SubmissionUserSnapshot,
 } from "./submission.model";
 import { toSubmissionResponse } from "./submission.model";
 import type { SubmissionListFilters, SubmissionRepository } from "./submission.repository";
@@ -30,6 +31,7 @@ export interface SubmissionService {
   runSubmission(user: AuthenticatedUser, input: SubmissionWriteInput): Promise<SubmissionRunResponse>;
   createSubmission(user: AuthenticatedUser, input: SubmissionWriteInput): Promise<SubmissionQueueReceipt>;
   processQueuedSubmission(submissionId: string, queueJobId?: string): Promise<SubmissionResponse>;
+  recoverStaleSubmissions(): Promise<{ recoveredCount: number; recoveredSubmissionIds: string[] }>;
   listSubmissions(
     user: AuthenticatedUser,
     query: SubmissionListQuery,
@@ -45,6 +47,11 @@ interface SubmissionServiceDependencies {
   executionProvider: ExecutionProvider;
   submissionQueue: SubmissionQueue;
   now: () => Date;
+}
+
+interface RecoverySummary {
+  recoveredCount: number;
+  recoveredSubmissionIds: string[];
 }
 
 export interface SubmissionWriteInput {
@@ -66,6 +73,24 @@ function calculateAccuracy(acceptedSubmissionCount: number, submissionCount: num
   }
 
   return Math.round((acceptedSubmissionCount / submissionCount) * 10000) / 100;
+}
+
+async function buildSubmissionUserSnapshots(
+  userRepository: UserRepository,
+  submissions: readonly SubmissionRecord[],
+): Promise<Map<string, SubmissionUserSnapshot>> {
+  const uniqueEmails = Array.from(new Set(submissions.map((submission) => submission.userEmail)));
+  const users = await Promise.all(uniqueEmails.map((email) => userRepository.getByEmail(email)));
+
+  return new Map(
+    uniqueEmails.map((email, index) => [
+      email,
+      {
+        name: users[index]?.name ?? null,
+        uid: users[index]?.uid ?? null,
+      },
+    ]),
+  );
 }
 
 async function ensureUser(
@@ -418,7 +443,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       }
 
       if (existingSubmission.finalizationAppliedAt && isFinalSubmissionStatus(existingSubmission.status)) {
-        return toSubmissionResponse(existingSubmission, true);
+        const user = await dependencies.userRepository.getByEmail(existingSubmission.userEmail);
+        return toSubmissionResponse(existingSubmission, true, {
+          name: user?.name ?? null,
+          uid: user?.uid ?? null,
+        });
       }
 
       const problem = await dependencies.problemRepository.getById(existingSubmission.problemId);
@@ -447,7 +476,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         });
 
         const finalizedSubmission = await finalizeSubmission(dependencies, runningSubmission.id, result);
-        return toSubmissionResponse(finalizedSubmission, true);
+        const user = await dependencies.userRepository.getByEmail(finalizedSubmission.userEmail);
+        return toSubmissionResponse(finalizedSubmission, true, {
+          name: user?.name ?? null,
+          uid: user?.uid ?? null,
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Background submission execution failed.";
         const failedSubmission = await markSubmissionAsInternalError(dependencies, runningSubmission.id, message);
@@ -455,8 +488,49 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
           throw error;
         }
 
-        return toSubmissionResponse(failedSubmission, true);
+        const user = await dependencies.userRepository.getByEmail(failedSubmission.userEmail);
+        return toSubmissionResponse(failedSubmission, true, {
+          name: user?.name ?? null,
+          uid: user?.uid ?? null,
+        });
       }
+    },
+
+    async recoverStaleSubmissions() {
+      const now = dependencies.now();
+      const staleBefore = new Date(now.getTime() - env.SUBMISSION_RECOVERY_STALE_MS);
+      const queuedSubmissions = await dependencies.submissionRepository.list({ status: "QUEUED" });
+      const runningSubmissions = await dependencies.submissionRepository.list({ status: "RUNNING" });
+      const staleSubmissions = [...queuedSubmissions, ...runningSubmissions]
+        .filter((submission) => !submission.finalizationAppliedAt)
+        .filter((submission) => submission.updatedAt.getTime() <= staleBefore.getTime())
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+
+      const recoveredSubmissionIds: string[] = [];
+
+      for (const submission of staleSubmissions) {
+        try {
+          const queueJobId = await dependencies.submissionQueue.enqueue(submission.id);
+          await dependencies.submissionRepository.save({
+            ...submission,
+            queueJobId,
+            status: "QUEUED",
+            updatedAt: dependencies.now(),
+            stderr: null,
+          });
+          recoveredSubmissionIds.push(submission.id);
+        } catch (error) {
+          console.error(
+            `Failed to recover stale submission ${submission.id}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      return {
+        recoveredCount: recoveredSubmissionIds.length,
+        recoveredSubmissionIds,
+      } satisfies RecoverySummary;
     },
 
     async listSubmissions(user, query) {
@@ -467,10 +541,14 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         userEmail: user.role === "FACULTY" ? query.userEmail : user.email,
       };
       const submissions = await dependencies.submissionRepository.list(filters);
+      const visibleSubmissions = submissions.filter((submission) =>
+        user.role === "FACULTY" ? true : submission.userEmail === user.email,
+      );
+      const userSnapshots = await buildSubmissionUserSnapshots(dependencies.userRepository, visibleSubmissions);
 
-      const responses = submissions
-        .filter((submission) => (user.role === "FACULTY" ? true : submission.userEmail === user.email))
-        .map((submission) => toSubmissionResponse(submission));
+      const responses = visibleSubmissions.map((submission) =>
+        toSubmissionResponse(submission, false, userSnapshots.get(submission.userEmail)),
+      );
 
       return paginateArray(responses, query);
     },
@@ -485,7 +563,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         throw new AppError(403, "You are not allowed to view this submission");
       }
 
-      return toSubmissionResponse(submission, true);
+      const submissionUser = await dependencies.userRepository.getByEmail(submission.userEmail);
+      return toSubmissionResponse(submission, true, {
+        name: submissionUser?.name ?? null,
+        uid: submissionUser?.uid ?? null,
+      });
     },
   };
 }

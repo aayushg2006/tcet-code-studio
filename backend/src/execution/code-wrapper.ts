@@ -21,6 +21,7 @@ using namespace std;`;
 const JAVA_SOLUTION_CLASS_PATTERN = /\b(?:public\s+)?(?:final\s+|abstract\s+)?class\s+Solution\b/;
 const JAVA_MAIN_CLASS_PATTERN = /\bpublic\s+class\s+Main\b|\bclass\s+Main\b/;
 const JAVA_MAIN_METHOD_PATTERN = /\bpublic\s+static\s+void\s+main\s*\(\s*String\s*\[\]\s*\w+\s*\)/;
+const JAVA_TOP_LEVEL_CLASS_PATTERN = /\b(public\s+)?((?:final\s+|abstract\s+)*)class\s+([A-Za-z_]\w*)\b/;
 const JAVA_METHOD_PATTERN =
   /(?:public|protected|private)?\s*(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:<[^>]+>\s*)?[\w<>\[\],\s?]+\b([A-Za-z_]\w*)\s*\(\s*\)\s*(?:throws\s+[^{]+)?\{/gm;
 const JAVA_IGNORED_METHOD_NAMES = new Set(["Solution", "main"]);
@@ -34,6 +35,11 @@ const JAVASCRIPT_SOLUTION_CLASS_PATTERN = /\bclass\s+Solution\b/;
 const JAVASCRIPT_INSTANTIATION_PATTERN = /\bnew\s+Solution\s*\(/;
 const JAVASCRIPT_METHOD_PATTERN = /^[ \t]*(?:async\s+)?([A-Za-z_]\w*)\s*\(\s*\)\s*\{/gm;
 const JAVASCRIPT_IGNORED_METHOD_NAMES = new Set(["constructor"]);
+const TYPESCRIPT_SOLUTION_CLASS_PATTERN = /\bclass\s+Solution\b/;
+const TYPESCRIPT_INSTANTIATION_PATTERN = /\bnew\s+Solution\s*\(/;
+const TYPESCRIPT_METHOD_PATTERN =
+  /^[ \t]*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:async\s+)?([A-Za-z_]\w*)\s*\(\s*\)\s*(?::\s*[^{]+)?\s*\{/gm;
+const TYPESCRIPT_IGNORED_METHOD_NAMES = new Set(["constructor"]);
 
 function detectMethodName(
   source: string,
@@ -152,6 +158,21 @@ function normalizeJavaSolutionClass(source: string): string {
   );
 }
 
+function normalizeJavaEntryClass(source: string): string {
+  if (JAVA_MAIN_CLASS_PATTERN.test(source)) {
+    return source;
+  }
+
+  return source.replace(
+    JAVA_TOP_LEVEL_CLASS_PATTERN,
+    (_, publicKeyword: string | undefined, modifiers: string | undefined) => {
+      const prefix = publicKeyword ? "public " : "";
+      const normalizedModifiers = modifiers ?? "";
+      return `${prefix}${normalizedModifiers}class Main`;
+    },
+  );
+}
+
 function splitJavaPreamble(source: string): { preamble: string; body: string } {
   const lines = source.split("\n");
   const preambleLines: string[] = [];
@@ -178,11 +199,11 @@ function splitJavaPreamble(source: string): { preamble: string; body: string } {
 }
 
 function wrapJavaSolution(source: string): string {
-  if (
-    !JAVA_SOLUTION_CLASS_PATTERN.test(source) ||
-    JAVA_MAIN_CLASS_PATTERN.test(source) ||
-    JAVA_MAIN_METHOD_PATTERN.test(source)
-  ) {
+  if (JAVA_MAIN_METHOD_PATTERN.test(source)) {
+    return normalizeJavaEntryClass(source);
+  }
+
+  if (!JAVA_SOLUTION_CLASS_PATTERN.test(source) || JAVA_MAIN_CLASS_PATTERN.test(source)) {
     return source;
   }
 
@@ -330,11 +351,85 @@ const __tcetFormatValue = (value) => {
 `;
 }
 
+function prependTypeScriptNodeDeclarations(source: string): string {
+  const declarationBlock = `declare function require(name: string): any;
+declare const Promise: any;
+declare const process: {
+  stdout: {
+    write(value: string): void;
+  };
+};`;
+
+  const trimmedSource = source.trimStart();
+  if (
+    /declare\s+function\s+require\s*\(/.test(trimmedSource) ||
+    /declare\s+const\s+Promise\b/.test(trimmedSource) ||
+    /declare\s+const\s+process\b/.test(trimmedSource)
+  ) {
+    return source;
+  }
+
+  return `${declarationBlock}
+
+${source}`;
+}
+
+function wrapTypeScriptSolution(source: string): string {
+  const preparedSource = prependTypeScriptNodeDeclarations(source);
+
+  if (!TYPESCRIPT_SOLUTION_CLASS_PATTERN.test(preparedSource) || TYPESCRIPT_INSTANTIATION_PATTERN.test(preparedSource)) {
+    return preparedSource;
+  }
+
+  const targetMethodName = detectMethodName(
+    preparedSource,
+    TYPESCRIPT_SOLUTION_CLASS_PATTERN,
+    TYPESCRIPT_METHOD_PATTERN,
+    TYPESCRIPT_IGNORED_METHOD_NAMES,
+  );
+
+  return `${preparedSource}
+
+const __tcetFormatValue = (value: unknown): string => {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => __tcetFormatValue(item)).join(" ");
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "first" in value &&
+    "second" in value
+  ) {
+    const pair = value as { first: unknown; second: unknown };
+    return [__tcetFormatValue(pair.first), __tcetFormatValue(pair.second)].join(" ");
+  }
+
+  return String(value ?? "");
+};
+
+(async () => {
+  const sol = new Solution();
+  const result = await (sol as any).${targetMethodName}();
+  if (result !== undefined) {
+    process.stdout.write(__tcetFormatValue(result));
+  }
+})();
+`;
+}
+
 const wrapperStrategies: Partial<Record<ExecutableLanguage, WrapperStrategy>> = {
+  arduino: wrapCppSolution,
   cpp: wrapCppSolution,
   java: wrapJavaSolution,
   javascript: wrapJavaScriptSolution,
   python: wrapPythonSolution,
+  typescript: wrapTypeScriptSolution,
+  vanilla: wrapJavaScriptSolution,
 };
 
 export function wrapSubmissionCode(language: ExecutableLanguage, source: string): string {

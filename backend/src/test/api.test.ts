@@ -92,7 +92,7 @@ describe("TCET Code Studio backend APIs", () => {
   });
 
   it("keeps sample runs non-persistent and awards rating only for the first accepted unique solve", async () => {
-    const { app } = createTestApp();
+    const { app, services } = createTestApp();
     const createdProblem = await createProblem(app);
 
     const runResponse = await request(app).post("/api/submissions/run").send({
@@ -114,9 +114,13 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(wrongAnswerResponse.status).toBe(201);
-    expect(wrongAnswerResponse.body.submission.status).toBe("WRONG_ANSWER");
-    expect(wrongAnswerResponse.body.submission.ratingAwarded).toBe(0);
+    expect(wrongAnswerResponse.status).toBe(202);
+    const wrongAnswerSubmission = await services.submissionService.processQueuedSubmission(
+      wrongAnswerResponse.body.submission_id,
+      "test-job-1",
+    );
+    expect(wrongAnswerSubmission.status).toBe("WRONG_ANSWER");
+    expect(wrongAnswerSubmission.ratingAwarded).toBe(0);
 
     const acceptedResponse = await request(app).post("/api/submissions").send({
       problemId: createdProblem.id,
@@ -124,9 +128,13 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(acceptedResponse.status).toBe(201);
-    expect(acceptedResponse.body.submission.status).toBe("ACCEPTED");
-    expect(acceptedResponse.body.submission.ratingAwarded).toBe(100);
+    expect(acceptedResponse.status).toBe(202);
+    const acceptedSubmission = await services.submissionService.processQueuedSubmission(
+      acceptedResponse.body.submission_id,
+      "test-job-2",
+    );
+    expect(acceptedSubmission.status).toBe("ACCEPTED");
+    expect(acceptedSubmission.ratingAwarded).toBe(100);
 
     const repeatedAcceptedResponse = await request(app).post("/api/submissions").send({
       problemId: createdProblem.id,
@@ -134,8 +142,12 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(repeatedAcceptedResponse.status).toBe(201);
-    expect(repeatedAcceptedResponse.body.submission.ratingAwarded).toBe(0);
+    expect(repeatedAcceptedResponse.status).toBe(202);
+    const repeatedAcceptedSubmission = await services.submissionService.processQueuedSubmission(
+      repeatedAcceptedResponse.body.submission_id,
+      "test-job-3",
+    );
+    expect(repeatedAcceptedSubmission.ratingAwarded).toBe(0);
 
     const currentUserResponse = await request(app).get("/api/users/me");
     expect(currentUserResponse.status).toBe(200);
@@ -178,7 +190,7 @@ describe("TCET Code Studio backend APIs", () => {
   });
 
   it("excludes faculty from the leaderboard, breaks rating ties by accuracy, and scopes submissions correctly", async () => {
-    const { app } = createTestApp();
+    const { app, services } = createTestApp();
     const facultyProfileResponse = await request(app).get("/api/users/me").set(facultyHeaders);
     expect(facultyProfileResponse.status).toBe(200);
     expect(facultyProfileResponse.body.user.rank).toBeNull();
@@ -192,21 +204,24 @@ describe("TCET Code Studio backend APIs", () => {
       code: "accepted",
       language: "python",
     });
-    expect(firstStudentAcceptedOne.status).toBe(201);
+    expect(firstStudentAcceptedOne.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentAcceptedOne.body.submission_id, "test-job-4");
 
     const firstStudentAcceptedTwo = await request(app).post("/api/submissions").send({
       problemId: easyProblemTwo.id,
       code: "accepted",
       language: "python",
     });
-    expect(firstStudentAcceptedTwo.status).toBe(201);
+    expect(firstStudentAcceptedTwo.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentAcceptedTwo.body.submission_id, "test-job-5");
 
     const firstStudentWrongAnswer = await request(app).post("/api/submissions").send({
       problemId: easyProblemOne.id,
       code: "wrong_answer",
       language: "python",
     });
-    expect(firstStudentWrongAnswer.status).toBe(201);
+    expect(firstStudentWrongAnswer.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentWrongAnswer.body.submission_id, "test-job-6");
 
     const secondStudentHeaders = {
       "x-mock-email": "student2@tcetmumbai.in",
@@ -223,7 +238,11 @@ describe("TCET Code Studio backend APIs", () => {
         language: "python",
       });
 
-    expect(secondStudentSubmission.status).toBe(201);
+    expect(secondStudentSubmission.status).toBe(202);
+    const processedSecondStudentSubmission = await services.submissionService.processQueuedSubmission(
+      secondStudentSubmission.body.submission_id,
+      "test-job-7",
+    );
 
     const leaderboardResponse = await request(app).get("/api/leaderboard");
     expect(leaderboardResponse.status).toBe(200);
@@ -253,7 +272,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(facultySubmissionList.body.items[0].userEmail).toBe("student2@tcetmumbai.in");
 
     const forbiddenSubmissionDetail = await request(app).get(
-      `/api/submissions/${secondStudentSubmission.body.submission.id}`,
+      `/api/submissions/${processedSecondStudentSubmission.id}`,
     );
     expect(forbiddenSubmissionDetail.status).toBe(403);
 

@@ -156,6 +156,8 @@ export interface RunResultEnvelope {
 export interface Submission {
   id: string;
   userEmail: string;
+  userName: string | null;
+  userUid: string | null;
   problemId: string;
   problemTitle: string;
   difficulty: Difficulty;

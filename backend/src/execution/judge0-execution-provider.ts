@@ -4,12 +4,13 @@ import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTes
 import {
   Judge0Client,
   Judge0ClientError,
+  type Judge0Language,
   type Judge0SubmissionResponse,
 } from "./judge0-client";
 
 const PROVIDER_NAME = "judge0";
 
-const EDITOR_ONLY_BLOCKLIST = new Set(["vanilla", "react", "html", "css"]);
+const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
 
 type LanguageIdMap = Record<ExecutableLanguage, number | null>;
 
@@ -21,6 +22,11 @@ interface TestExecutionOutcome {
   stderr?: string;
 }
 
+const LANGUAGE_RUNTIME_ALIASES: Partial<Record<ExecutableLanguage, ExecutableLanguage>> = {
+  arduino: "cpp",
+  vanilla: "javascript",
+};
+
 export class Judge0ExecutionProvider implements ExecutionProvider {
   private readonly client: Judge0Client;
 
@@ -31,11 +37,12 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     javascript: 102,
     python: 113,
     ruby: 72,
-    arduino: null,
+    arduino: 105,
     go: 107,
     rust: 108,
     csharp: 51,
     php: 98,
+    vanilla: 102,
     typescript: 101,
     assembly8086: 45,
     kotlin: 111,
@@ -54,11 +61,12 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     javascript: 63,
     python: 71,
     ruby: 72,
-    arduino: null,
+    arduino: 54,
     go: 60,
     rust: 73,
     csharp: 51,
     php: 68,
+    vanilla: 63,
     typescript: 74,
     assembly8086: 45,
     kotlin: 78,
@@ -88,11 +96,17 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       "Python (3.8.1)",
     ],
     ruby: ["Ruby (2.7.0)"],
-    arduino: [],
+    arduino: ["C++ (GCC 14.1.0)", "C++ (GCC 9.2.0)", "C++ (GCC 8.3.0)", "C++ (GCC 7.4.0)"],
     go: ["Go (1.23.5)", "Go (1.22.0)", "Go (1.18.5)", "Go (1.13.5)"],
     rust: ["Rust (1.85.0)", "Rust (1.40.0)"],
     csharp: ["C# (Mono 6.6.0.161)"],
     php: ["PHP (8.3.11)", "PHP (7.4.1)"],
+    vanilla: [
+      "JavaScript (Node.js 22.08.0)",
+      "JavaScript (Node.js 20.17.0)",
+      "JavaScript (Node.js 18.15.0)",
+      "JavaScript (Node.js 12.14.0)",
+    ],
     typescript: ["TypeScript (5.6.2)", "TypeScript (5.0.3)", "TypeScript (3.7.4)"],
     assembly8086: ["Assembly (NASM 2.14.02)"],
     kotlin: ["Kotlin (2.1.10)", "Kotlin (1.3.70)"],
@@ -102,6 +116,30 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     elixir: ["Elixir (1.9.4)"],
     erlang: ["Erlang (OTP 22.2)"],
     racket: [],
+  };
+
+  private readonly languageNameHints: Record<ExecutableLanguage, readonly string[]> = {
+    c: ["c (gcc", "c (clang"],
+    cpp: ["c++"],
+    java: ["java"],
+    javascript: ["javascript", "node.js"],
+    python: ["python"],
+    ruby: ["ruby"],
+    arduino: ["arduino", "c++"],
+    go: ["go ("],
+    rust: ["rust"],
+    csharp: ["c#"],
+    php: ["php"],
+    vanilla: ["javascript", "node.js"],
+    typescript: ["typescript"],
+    assembly8086: ["assembly", "nasm"],
+    kotlin: ["kotlin"],
+    swift: ["swift"],
+    dart: ["dart"],
+    scala: ["scala"],
+    elixir: ["elixir"],
+    erlang: ["erlang"],
+    racket: ["racket"],
   };
 
   constructor(client = new Judge0Client()) {
@@ -185,16 +223,14 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
 
   private async resolveLanguageId(language: ExecutableLanguage): Promise<number> {
     const normalizedLanguage = this.validateLanguage(language);
+    const runtimeLanguage = this.resolveRuntimeLanguage(normalizedLanguage);
     this.assertLanguageAllowed(normalizedLanguage);
 
-    const fallbackId = this.getFallbackLanguageIds()[normalizedLanguage];
-    if (fallbackId === null) {
-      throw new Error(`Judge0 does not provide a first-class mapping for "${normalizedLanguage}".`);
-    }
+    const fallbackId = this.getFallbackLanguageIds()[runtimeLanguage];
 
     try {
       const languages = await this.client.getLanguages();
-      const preferredNames = this.preferredLanguageNames[normalizedLanguage];
+      const preferredNames = this.preferredLanguageNames[runtimeLanguage];
 
       for (const preferredName of preferredNames) {
         const match = languages.find((candidate) => candidate.name === preferredName);
@@ -203,7 +239,13 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         }
       }
 
-      const fallbackMatch = languages.find((candidate) => candidate.id === fallbackId);
+      const hintedMatch = this.findLanguageByHint(languages, runtimeLanguage);
+      if (hintedMatch) {
+        return hintedMatch.id;
+      }
+
+      const fallbackMatch =
+        fallbackId === null ? undefined : languages.find((candidate) => candidate.id === fallbackId);
       if (fallbackMatch) {
         return fallbackMatch.id;
       }
@@ -216,7 +258,11 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       }
     }
 
-    return fallbackId;
+    if (fallbackId !== null) {
+      return fallbackId;
+    }
+
+    throw new Error(`Judge0 does not provide a first-class mapping for "${normalizedLanguage}".`);
   }
 
   private assertLanguageAllowed(language: ExecutableLanguage): void {
@@ -241,8 +287,27 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     return normalized;
   }
 
+  private resolveRuntimeLanguage(language: ExecutableLanguage): ExecutableLanguage {
+    return LANGUAGE_RUNTIME_ALIASES[language] ?? language;
+  }
+
   private getFallbackLanguageIds(): LanguageIdMap {
     return this.client.usesApiKey() ? this.cloudFallbackLanguageIds : this.localFallbackLanguageIds;
+  }
+
+  private findLanguageByHint(
+    languages: readonly Judge0Language[],
+    language: ExecutableLanguage,
+  ): Judge0Language | undefined {
+    const hints = this.languageNameHints[language];
+    if (!hints.length) {
+      return undefined;
+    }
+
+    return languages.find((candidate) => {
+      const normalizedName = candidate.name.trim().toLowerCase();
+      return hints.some((hint) => normalizedName.includes(hint));
+    });
   }
 
   private async executeTestCase(
@@ -261,8 +326,8 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         memory_limit: request.memoryLimitMb * 1024,
         enable_network: false,
         redirect_stderr_to_stdout: false,
-        enable_per_process_and_thread_time_limit: true,
-        enable_per_process_and_thread_memory_limit: true,
+        enable_per_process_and_thread_time_limit: false,
+        enable_per_process_and_thread_memory_limit: false,
       });
 
       return this.normalizeJudge0Response(response);

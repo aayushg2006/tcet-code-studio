@@ -2,6 +2,24 @@ import "dotenv/config";
 import path from "node:path";
 import { z } from "zod";
 
+function parseBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -22,6 +40,10 @@ const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
   SUBMISSION_QUEUE_NAME: z.string().min(1).default("tcet-code-submissions"),
   SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
+  EMBED_SUBMISSION_WORKER: z
+    .unknown()
+    .transform((value) => parseBoolean(value, true)),
   MOCK_AUTH_DEFAULT_EMAIL: z.string().email().default("student1@tcetmumbai.in"),
   MOCK_AUTH_DEFAULT_ROLE: z.enum(["STUDENT", "FACULTY"]).default("STUDENT"),
   MOCK_AUTH_DEFAULT_NAME: z.string().min(1).default("Mock Student"),

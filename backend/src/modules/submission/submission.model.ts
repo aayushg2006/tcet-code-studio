@@ -36,6 +36,8 @@ export interface SubmissionQueueReceipt {
 export interface SubmissionResponse {
   id: string;
   userEmail: string;
+  userName: string | null;
+  userUid: string | null;
   problemId: string;
   problemTitle: string;
   difficulty: Difficulty;
@@ -55,6 +57,11 @@ export interface SubmissionResponse {
   code?: string;
 }
 
+export interface SubmissionUserSnapshot {
+  name: string | null;
+  uid: string | null;
+}
+
 export interface SubmissionRunResponse {
   problemId: string;
   language: ExecutableLanguage;
@@ -68,10 +75,16 @@ export interface SubmissionRunResponse {
   stderr?: string;
 }
 
-export function toSubmissionResponse(submission: SubmissionRecord, includeCode = false): SubmissionResponse {
+export function toSubmissionResponse(
+  submission: SubmissionRecord,
+  includeCode = false,
+  userSnapshot?: SubmissionUserSnapshot,
+): SubmissionResponse {
   return {
     id: submission.id,
     userEmail: submission.userEmail,
+    userName: userSnapshot?.name ?? null,
+    userUid: userSnapshot?.uid ?? null,
     problemId: submission.problemId,
     problemTitle: submission.problemTitleSnapshot,
     difficulty: submission.problemDifficultySnapshot,

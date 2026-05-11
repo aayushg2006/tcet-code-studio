@@ -65,5 +65,11 @@ export function createTestApp() {
       submissionRepository,
       leaderboardRepository,
     },
+    services: {
+      userService: dependencies.userService,
+      problemService: dependencies.problemService,
+      submissionService: dependencies.submissionService,
+      leaderboardService: dependencies.leaderboardService,
+    },
   };
 }

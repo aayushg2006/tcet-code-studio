@@ -26,7 +26,7 @@ export type SupportedLanguage =
   | "elixir"
   | "erlang"
   | "racket";
-export type EditorOnlyLanguage = "vanilla" | "react" | "html" | "css";
+export type EditorOnlyLanguage = "react" | "html" | "css";
 export type ExecutableLanguage = Exclude<SupportedLanguage, EditorOnlyLanguage>;
 export type SubmissionStatus =
   | "QUEUED"

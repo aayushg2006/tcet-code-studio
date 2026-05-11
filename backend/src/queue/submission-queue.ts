@@ -36,7 +36,7 @@ export class BullMQSubmissionQueue implements SubmissionQueue {
   });
 
   async enqueue(submissionId: string): Promise<string> {
-    const job = await this.queue.add("submission.execute", { submissionId });
+    const job = await this.queue.add("submission.execute", { submissionId }, { jobId: submissionId });
     return String(job.id ?? submissionId);
   }
 }
