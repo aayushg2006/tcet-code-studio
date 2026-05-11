@@ -53,6 +53,18 @@ describe("TCET Code Studio backend APIs", () => {
     expect(legacyProfileResponse.status).toBe(200);
     expect(legacyProfileResponse.body.email).toBe("faculty@tcetmumbai.in");
     expect(legacyProfileResponse.body.role).toBe("FACULTY");
+
+    const facultyStudentLookup = await request(app)
+      .get("/api/users/student1%40tcetmumbai.in")
+      .set(facultyHeaders);
+
+    expect(facultyStudentLookup.status).toBe(200);
+    expect(facultyStudentLookup.body.user.email).toBe("student1@tcetmumbai.in");
+
+    const forbiddenStudentLookup = await request(app)
+      .get("/api/users/student2%40tcetmumbai.in");
+
+    expect(forbiddenStudentLookup.status).toBe(403);
   });
 
   it("supports faculty problem workflows and redacts hidden cases from student detail responses", async () => {

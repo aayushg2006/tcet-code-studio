@@ -1,11 +1,15 @@
-import { Trophy, Mail, GraduationCap } from "lucide-react";
-import { useMemo } from "react";
+import { Trophy, Mail, GraduationCap, Eye } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
 
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/Badges";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SubmissionActivityHeatmap } from "@/components/SubmissionActivityHeatmap";
 import { userApi, submissionsApi } from "@/api/services";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
@@ -27,15 +31,37 @@ function formatDate(isoDate: string): string {
 }
 
 export default function StudentProfile() {
+  const { email: emailParam } = useParams();
+  const targetEmail = emailParam ? decodeURIComponent(emailParam) : null;
+  const isFacultyView = Boolean(targetEmail);
+  const pathname = isFacultyView ? `/faculty/students/${encodeURIComponent(targetEmail!)}` : "/student/profile";
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+
   const { data: userData, isLoading: userLoading, isError: userError, error: userErrorObj } = useQuery({
-    queryKey: ["student-profile"],
-    queryFn: () => userApi.me("/student/profile"),
+    queryKey: ["student-profile", targetEmail ?? "self"],
+    queryFn: () =>
+      isFacultyView && targetEmail
+        ? userApi.getByEmail(targetEmail, pathname)
+        : userApi.me(pathname),
   });
 
   const { data: submissionData, isLoading: submissionsLoading } = useQuery({
-    queryKey: ["student-submissions"],
-    queryFn: () => submissionsApi.list({ pageSize: 50 }, "/student/profile"),
+    queryKey: ["student-submissions", targetEmail ?? "self"],
+    queryFn: () =>
+      submissionsApi.list(
+        {
+          pageSize: 1000,
+          userEmail: isFacultyView ? targetEmail ?? undefined : undefined,
+        },
+        pathname,
+      ),
     enabled: Boolean(userData?.user),
+  });
+
+  const { data: selectedSubmissionData, isLoading: selectedSubmissionLoading } = useQuery({
+    queryKey: ["student-profile-submission-detail", selectedSubmissionId, targetEmail ?? "self"],
+    queryFn: () => submissionsApi.getById(selectedSubmissionId || "", pathname),
+    enabled: Boolean(selectedSubmissionId),
   });
 
   const profile = userData?.user;
@@ -61,10 +87,18 @@ export default function StudentProfile() {
   }
 
   const avatarInitials = initialsFromName(profile.name, profile.email);
+  const heading = isFacultyView ? "Student Profile" : "Profile";
 
   return (
     <AppLayout>
       <div className="container space-y-6 py-8">
+        <div>
+          <h1 className="font-display text-3xl font-bold">{heading}</h1>
+          <p className="mt-1 text-muted-foreground">
+            {isFacultyView ? "Inspect student activity, submissions, and performance." : "Track your progress and coding rhythm."}
+          </p>
+        </div>
+
         <Card className="overflow-hidden shadow-elevated">
           <div className="h-40 bg-gradient-hero" />
           <div className="bg-card px-6 pb-6 pt-5">
@@ -111,6 +145,8 @@ export default function StudentProfile() {
           ))}
         </div>
 
+        <SubmissionActivityHeatmap submissions={submissions} />
+
         <Card className="p-6 shadow-card">
           <h2 className="mb-4 font-display text-xl font-bold">Submission History</h2>
           <div className="divide-y divide-border">
@@ -120,22 +156,58 @@ export default function StudentProfile() {
             )}
             {!submissionsLoading &&
               submissions.map((submission) => (
-                <div key={submission.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div key={submission.id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <div className="font-medium">{submission.problemTitle}</div>
                     <div className="text-xs text-muted-foreground">
                       {toLanguageLabel(submission.language)} {"\u2022"} {formatDate(submission.createdAt)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="font-mono-code text-xs text-muted-foreground">{submission.runtimeMs} ms</span>
                     <StatusBadge status={toStatusLabel(submission.status)} />
+                    <Button size="sm" variant="outline" onClick={() => setSelectedSubmissionId(submission.id)}>
+                      <Eye className="mr-1 h-3.5 w-3.5" /> View Code
+                    </Button>
                   </div>
                 </div>
               ))}
           </div>
         </Card>
       </div>
+
+      <Dialog open={Boolean(selectedSubmissionId)} onOpenChange={(open) => !open && setSelectedSubmissionId(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {(selectedSubmissionData?.submission.problemTitle ?? "Submission")} {"\u2022"}{" "}
+              {selectedSubmissionData?.submission.userName ?? profile.name ?? profile.email}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedSubmissionLoading && <div className="text-sm text-muted-foreground">Loading code...</div>}
+          {!selectedSubmissionLoading && selectedSubmissionData?.submission && (
+            <>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <span className="font-mono-code text-muted-foreground">
+                  {selectedSubmissionData.submission.userUid ?? selectedSubmissionData.submission.userEmail}
+                </span>
+                <StatusBadge status={toStatusLabel(selectedSubmissionData.submission.status)} />
+                <span className="font-mono-code text-muted-foreground">
+                  {toLanguageLabel(selectedSubmissionData.submission.language)}
+                </span>
+                <span className="font-mono-code text-muted-foreground">
+                  {selectedSubmissionData.submission.runtimeMs} ms {"\u2022"}{" "}
+                  {(selectedSubmissionData.submission.memoryKb / 1024).toFixed(1)} MB
+                </span>
+              </div>
+              <pre className="max-h-96 overflow-auto rounded-lg bg-[hsl(220_50%_8%)] p-4 font-mono-code text-xs text-[hsl(40_30%_92%)]">
+                {selectedSubmissionData.submission.code || "// No code payload returned"}
+              </pre>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
+

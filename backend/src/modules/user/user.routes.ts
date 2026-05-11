@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
+import { requireRole } from "../../middleware/require-role";
 import { asyncHandler } from "../../shared/middleware/async-handler";
 import { createUserController } from "./user.controller";
 
@@ -9,6 +10,7 @@ export function createUserRouter(dependencies: ApplicationDependencies): Router 
 
   router.use(dependencies.authMiddleware);
   router.get("/me", asyncHandler(controller.getCurrentUser));
+  router.get("/:email", requireRole("FACULTY"), asyncHandler(controller.getUserByEmail));
 
   return router;
 }

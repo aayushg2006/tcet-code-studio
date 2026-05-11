@@ -8,6 +8,12 @@ export function createUserController(userService: UserService) {
       res.json({ user: profile });
     },
 
+    async getUserByEmail(req: Request, res: Response): Promise<void> {
+      const email = Array.isArray(req.params.email) ? req.params.email[0] : req.params.email;
+      const profile = await userService.getUserByEmail(email);
+      res.json({ user: profile });
+    },
+
     async getLegacyProfile(req: Request, res: Response): Promise<void> {
       const profile = await userService.getCurrentUser(req.user!);
       res.json(profile);

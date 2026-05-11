@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
 import { leaderboardApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toStatusLabel } from "@/api/mappers";
 
 function safeAverage(values: number[]): number {
@@ -138,8 +139,12 @@ export default function FacultyDashboard() {
                       {recentSubmissions.map((submission) => (
                         <tr key={submission.id} className="border-t border-border">
                           <td className="px-4 py-2">
-                            <div className="font-medium">{submission.userEmail}</div>
-                            <div className="font-mono-code text-xs text-muted-foreground">{submission.userEmail}</div>
+                            <Link to={toFacultyStudentProfilePath(submission.userEmail)} className="block hover:text-accent">
+                              <div className="font-medium">{submission.userName ?? submission.userEmail}</div>
+                              <div className="font-mono-code text-xs text-muted-foreground">
+                                {submission.userUid ?? submission.userEmail}
+                              </div>
+                            </Link>
                           </td>
                           <td className="px-4 py-2">{submission.problemTitle}</td>
                           <td className="px-4 py-2">
@@ -172,8 +177,10 @@ export default function FacultyDashboard() {
                     <li key={student.rank} className="flex items-center gap-3">
                       <span className="w-6 font-display font-bold text-accent">#{student.rank}</span>
                       <div className="flex-1">
-                        <div className="text-sm font-medium">{student.name ?? student.email}</div>
-                        <div className="font-mono-code text-xs text-muted-foreground">{student.email}</div>
+                        <Link to={toFacultyStudentProfilePath(student.email)} className="block hover:text-accent">
+                          <div className="text-sm font-medium">{student.name ?? student.email}</div>
+                          <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
+                        </Link>
                       </div>
                       <span className="font-mono-code text-xs font-semibold">{student.score}</span>
                     </li>

@@ -7,6 +7,8 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { leaderboardApi } from "@/api/services";
+import { Link } from "react-router-dom";
+import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 
 function downloadCsv(filename: string, content: string): void {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -86,8 +88,10 @@ export default function FacultyLeaderboard() {
                     <tr key={student.rank} className={`border-t border-border hover:bg-secondary/40 ${student.rank <= 3 ? "bg-accent/5" : ""}`}>
                       <td className="px-4 py-3 font-display font-bold text-accent">#{student.rank}</td>
                       <td className="px-4 py-3">
-                        <div className="font-medium">{student.name ?? student.email}</div>
-                        <div className="font-mono-code text-xs text-muted-foreground">{student.email}</div>
+                        <Link to={toFacultyStudentProfilePath(student.email)} className="block hover:text-accent">
+                          <div className="font-medium">{student.name ?? student.email}</div>
+                          <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
                       <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>

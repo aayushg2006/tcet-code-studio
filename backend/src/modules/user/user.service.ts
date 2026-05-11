@@ -5,6 +5,7 @@ import {
   isRankedLeaderboardEntry,
 } from "../leaderboard/leaderboard.model";
 import type { AuthenticatedUser } from "../../shared/types/auth";
+import { AppError } from "../../shared/errors/app-error";
 import { normalizeRole } from "../../shared/utils/normalize";
 import type { UserRecord, UserProfileResponse } from "./user.model";
 import { toUserProfileResponse } from "./user.model";
@@ -12,6 +13,7 @@ import type { UserRepository } from "./user.repository";
 
 export interface UserService {
   getCurrentUser(user: AuthenticatedUser): Promise<UserProfileResponse>;
+  getUserByEmail(email: string): Promise<UserProfileResponse>;
 }
 
 interface UserServiceDependencies {
@@ -54,6 +56,20 @@ function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date)
   };
 }
 
+async function buildRankedProfileResponse(
+  user: UserRecord,
+  leaderboardRepository: LeaderboardRepository,
+): Promise<UserProfileResponse> {
+  if (!isRankedLeaderboardEntry(user)) {
+    return toUserProfileResponse(user, null);
+  }
+
+  const leaderboard = (await leaderboardRepository.list()).filter(isRankedLeaderboardEntry);
+  const rank = leaderboard.sort(compareLeaderboardEntries).findIndex((entry) => entry.email === user.email) + 1;
+
+  return toUserProfileResponse(user, rank > 0 ? rank : null);
+}
+
 export function createUserService(dependencies: UserServiceDependencies): UserService {
   return {
     async getCurrentUser(authUser) {
@@ -66,14 +82,16 @@ export function createUserService(dependencies: UserServiceDependencies): UserSe
         await dependencies.leaderboardRepository.save(buildLeaderboardEntryFromUser(user));
       }
 
-      if (!isRankedLeaderboardEntry(user)) {
-        return toUserProfileResponse(user, null);
+      return buildRankedProfileResponse(user, dependencies.leaderboardRepository);
+    },
+
+    async getUserByEmail(email) {
+      const user = await dependencies.userRepository.getByEmail(email);
+      if (!user) {
+        throw new AppError(404, "User not found");
       }
 
-      const leaderboard = (await dependencies.leaderboardRepository.list()).filter(isRankedLeaderboardEntry);
-      const rank = leaderboard.sort(compareLeaderboardEntries).findIndex((entry) => entry.email === user.email) + 1;
-
-      return toUserProfileResponse(user, rank > 0 ? rank : null);
+      return buildRankedProfileResponse(user, dependencies.leaderboardRepository);
     },
   };
 }

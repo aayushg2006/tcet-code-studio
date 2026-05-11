@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { submissionsApi } from "@/api/services";
+import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import type { SubmissionStatus, SupportedLanguage } from "@/api/types";
 
@@ -140,10 +142,12 @@ export default function FacultySubmissions() {
                   submissions.map((submission) => (
                     <tr key={submission.id} className="border-t border-border hover:bg-secondary/40">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{submission.userName ?? submission.userEmail}</div>
-                        <div className="font-mono-code text-xs text-muted-foreground">
-                          {submission.userUid ?? submission.userEmail}
-                        </div>
+                        <Link to={toFacultyStudentProfilePath(submission.userEmail)} className="block hover:text-accent">
+                          <div className="font-medium">{submission.userName ?? submission.userEmail}</div>
+                          <div className="font-mono-code text-xs text-muted-foreground">
+                            {submission.userUid ?? submission.userEmail}
+                          </div>
+                        </Link>
                       </td>
                       <td className="px-4 py-3">{submission.problemTitle}</td>
                       <td className="px-4 py-3 font-mono-code text-xs">{toLanguageLabel(submission.language)}</td>

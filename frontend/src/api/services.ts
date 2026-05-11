@@ -44,6 +44,8 @@ export type SubmissionsQuery = PaginationQuery & {
 
 export const userApi = {
   me: (pathname?: string) => apiRequest<UserEnvelope>("/api/users/me", { pathname }),
+  getByEmail: (email: string, pathname?: string) =>
+    apiRequest<UserEnvelope>(`/api/users/${encodeURIComponent(email)}`, { pathname }),
 };
 
 export const problemsApi = {
