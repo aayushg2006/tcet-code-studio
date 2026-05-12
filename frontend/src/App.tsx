@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { RoleRoute } from "@/components/RoleRoute";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import StudentDashboard from "./pages/student/Dashboard.tsx";
@@ -30,19 +31,19 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/student/dashboard" element={<StudentDashboard />} />
-            <Route path="/student/problems" element={<StudentProblems />} />
-            <Route path="/student/problems/:id" element={<ProblemDetail />} />
-            <Route path="/student/leaderboard" element={<StudentLeaderboard />} />
-            <Route path="/student/profile" element={<StudentProfile />} />
-            <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
-            <Route path="/faculty/students/:email" element={<StudentProfile />} />
-            <Route path="/faculty/create-problem" element={<CreateProblem />} />
-            <Route path="/faculty/problems" element={<ManageProblems />} />
-            <Route path="/faculty/problems/:id" element={<ProblemDetails />} />
-            <Route path="/faculty/problems/:id/edit" element={<EditProblem />} />
-            <Route path="/faculty/submissions" element={<FacultySubmissions />} />
-            <Route path="/faculty/leaderboard" element={<FacultyLeaderboard />} />
+            <Route path="/student/dashboard" element={<RoleRoute allowedRole="STUDENT"><StudentDashboard /></RoleRoute>} />
+            <Route path="/student/problems" element={<RoleRoute allowedRole="STUDENT"><StudentProblems /></RoleRoute>} />
+            <Route path="/student/problems/:id" element={<RoleRoute allowedRole="STUDENT"><ProblemDetail /></RoleRoute>} />
+            <Route path="/student/leaderboard" element={<RoleRoute allowedRole="STUDENT"><StudentLeaderboard /></RoleRoute>} />
+            <Route path="/student/profile" element={<RoleRoute allowedRole="STUDENT"><StudentProfile /></RoleRoute>} />
+            <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
+            <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
+            <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
+            <Route path="/faculty/problems" element={<RoleRoute allowedRole="FACULTY"><ManageProblems /></RoleRoute>} />
+            <Route path="/faculty/problems/:id" element={<RoleRoute allowedRole="FACULTY"><ProblemDetails /></RoleRoute>} />
+            <Route path="/faculty/problems/:id/edit" element={<RoleRoute allowedRole="FACULTY"><EditProblem /></RoleRoute>} />
+            <Route path="/faculty/submissions" element={<RoleRoute allowedRole="FACULTY"><FacultySubmissions /></RoleRoute>} />
+            <Route path="/faculty/leaderboard" element={<RoleRoute allowedRole="FACULTY"><FacultyLeaderboard /></RoleRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

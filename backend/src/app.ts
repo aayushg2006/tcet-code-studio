@@ -9,19 +9,36 @@ import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
+const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
+
 function normalizeOrigin(origin: string): string {
   return origin.trim().toLowerCase().replace(/\/$/, "");
 }
 
-function resolveCorsOptions(): CorsOptions {
+function resolveAllowedOrigins(): Set<string> {
   const configuredOrigins = env.corsOrigins.map(normalizeOrigin);
-  const allowedOrigins = new Set<string>([
+  return new Set<string>([
+    normalizeOrigin(DEFAULT_FRONTEND_HOME),
     ...configuredOrigins,
     // Helpful local aliases for development when the browser uses 127.0.0.1.
     ...configuredOrigins
       .filter((origin) => origin.includes("localhost"))
       .map((origin) => origin.replace("localhost", "127.0.0.1")),
+    normalizeOrigin(DEFAULT_FRONTEND_HOME.replace("localhost", "127.0.0.1")),
   ]);
+}
+
+function resolveSafeFrontendOrigin(candidateOrigin: unknown, allowedOrigins: Set<string>): string {
+  if (typeof candidateOrigin !== "string" || candidateOrigin.trim() === "") {
+    return DEFAULT_FRONTEND_HOME;
+  }
+
+  const normalizedOrigin = normalizeOrigin(candidateOrigin);
+  return allowedOrigins.has(normalizedOrigin) ? normalizedOrigin : DEFAULT_FRONTEND_HOME;
+}
+
+function resolveCorsOptions(): CorsOptions {
+  const allowedOrigins = resolveAllowedOrigins();
 
   return {
     origin: (requestOrigin, callback) => {
@@ -43,11 +60,7 @@ function resolveCorsOptions(): CorsOptions {
     allowedHeaders: [
       "Content-Type",
       "Authorization",
-      "x-mock-role",
-      "x-mock-email",
-      "x-mock-name",
-      "x-mock-uid",
-      "x-mock-department",
+      "X-Frontend-Pathname",
     ],
   };
 }
@@ -55,6 +68,7 @@ function resolveCorsOptions(): CorsOptions {
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
   const corsOptions = resolveCorsOptions();
+  const allowedOrigins = resolveAllowedOrigins();
 
   app.disable("x-powered-by");
   app.use(cors(corsOptions));
@@ -84,6 +98,20 @@ export function createApp(dependencies: ApplicationDependencies): Express {
       }
     });
   }
+
+  app.get("/api/logout", (req, res) => {
+    const ssoLogoutUrl = `${req.protocol}://${req.hostname || "localhost"}:4000/logout`;
+    const frontendOrigin = resolveSafeFrontendOrigin(req.get("origin"), allowedOrigins);
+    const callbackUrl = encodeURIComponent(frontendOrigin);
+    res.redirect(302, `${ssoLogoutUrl}?callbackUrl=${callbackUrl}`);
+  });
+
+  app.get("/api/auth/sso/callback", dependencies.authMiddleware, (req, res) => {
+    const frontendOrigin = resolveSafeFrontendOrigin(req.query.frontendOrigin, allowedOrigins);
+    const userRole = req.user?.role === "FACULTY" ? "FACULTY" : "STUDENT";
+    const destinationPath = userRole === "FACULTY" ? "/faculty/dashboard" : "/student/dashboard";
+    res.redirect(302, `${frontendOrigin}${destinationPath}`);
+  });
 
   app.use("/api/users", createUserRouter(dependencies));
   app.use("/api/user", createLegacyUserRouter(dependencies));

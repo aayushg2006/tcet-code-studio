@@ -1,69 +1,50 @@
 import type { ApiErrorPayload } from "@/api/types";
 
-const DEFAULT_API_BASE_URL = "http://localhost:3000";
-const DEFAULT_STUDENT_PROFILE = "student1";
+function getDefaultApiBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || DEFAULT_API_BASE_URL;
+  return "http://localhost:3001";
+}
 
-const STUDENT_PROFILE =
-  ((import.meta.env.VITE_MOCK_STUDENT as string | undefined)?.trim().toLowerCase() || DEFAULT_STUDENT_PROFILE) ===
-  "student2"
-    ? "student2"
-    : "student1";
+function resolveApiBaseUrl(): string {
+  const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+  if (!configuredBaseUrl) {
+    return getDefaultApiBaseUrl();
+  }
+
+  if (typeof window === "undefined") {
+    return configuredBaseUrl;
+  }
+
+  try {
+    const parsed = new URL(configuredBaseUrl);
+    if (["localhost", "127.0.0.1"].includes(parsed.hostname) && parsed.hostname !== window.location.hostname) {
+      parsed.hostname = window.location.hostname;
+      return parsed.toString().replace(/\/$/, "");
+    }
+  } catch {
+    return configuredBaseUrl;
+  }
+
+  return configuredBaseUrl;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
+  loginUrl?: string;
   details?: unknown;
 
   constructor(payload: ApiErrorPayload) {
     super(payload.message);
     this.name = "ApiError";
     this.status = payload.status;
+    this.loginUrl = payload.loginUrl;
     this.details = payload.details;
   }
-}
-
-function resolveRoleFromPath(pathname: string): "STUDENT" | "FACULTY" | null {
-  if (pathname.startsWith("/faculty")) {
-    return "FACULTY";
-  }
-
-  if (pathname.startsWith("/student")) {
-    return "STUDENT";
-  }
-
-  return null;
-}
-
-function buildDevMockHeaders(pathname: string): Record<string, string> {
-  const role = resolveRoleFromPath(pathname);
-
-  if (role === "FACULTY") {
-    return {
-      "x-mock-role": "FACULTY",
-      "x-mock-email": "faculty1@tcetmumbai.in",
-      "x-mock-name": "Prof. Mehta",
-    };
-  }
-
-  if (role === "STUDENT") {
-    if (STUDENT_PROFILE === "student2") {
-      return {
-        "x-mock-role": "STUDENT",
-        "x-mock-email": "student2@tcetmumbai.in",
-        "x-mock-name": "Student Two",
-      };
-    }
-
-    return {
-      "x-mock-role": "STUDENT",
-      "x-mock-email": "student1@tcetmumbai.in",
-      "x-mock-name": "Student One",
-    };
-  }
-
-  return {};
 }
 
 export type ApiRequestOptions = {
@@ -72,6 +53,7 @@ export type ApiRequestOptions = {
   body?: unknown;
   pathname?: string;
   headers?: Record<string, string>;
+  suppressAuthRedirect?: boolean;
   responseType?: "json" | "text";
 };
 
@@ -96,6 +78,10 @@ async function parseErrorPayload(response: Response): Promise<ApiErrorPayload> {
     const data = await response.json();
 
     if (data && typeof data === "object") {
+      const loginUrl =
+        typeof (data as { loginUrl?: unknown }).loginUrl === "string"
+          ? (data as { loginUrl: string }).loginUrl
+          : undefined;
       const message =
         typeof (data as { message?: unknown }).message === "string"
           ? (data as { message: string }).message
@@ -103,6 +89,7 @@ async function parseErrorPayload(response: Response): Promise<ApiErrorPayload> {
       return {
         status: response.status,
         message,
+        loginUrl,
         details: data,
       };
     }
@@ -124,12 +111,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       ? window.location.pathname
       : "/");
 
-  const devHeaders =
-    import.meta.env.DEV || import.meta.env.MODE === "development" ? buildDevMockHeaders(pathname) : {};
-
   const headers: Record<string, string> = {
-    ...devHeaders,
     ...(options.headers ?? {}),
+    "x-frontend-pathname": pathname,
   };
 
   const isJsonBody = options.body !== undefined;
@@ -137,15 +121,35 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}${queryString}`, {
-    method: options.method ?? "GET",
-    credentials: "include",
-    headers,
-    body: isJsonBody ? JSON.stringify(options.body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}${queryString}`, {
+      method: options.method ?? "GET",
+      credentials: "include",
+      headers,
+      body: isJsonBody ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed";
+    throw new ApiError({
+      status: 0,
+      message: `Unable to reach backend at ${API_BASE_URL}. ${message}`,
+    });
+  }
 
   if (!response.ok) {
-    throw new ApiError(await parseErrorPayload(response));
+    const errorPayload = await parseErrorPayload(response);
+
+    if (
+      errorPayload.status === 401 &&
+      errorPayload.loginUrl &&
+      !options.suppressAuthRedirect &&
+      typeof window !== "undefined"
+    ) {
+      window.location.assign(errorPayload.loginUrl);
+    }
+
+    throw new ApiError(errorPayload);
   }
 
   if (options.responseType === "text") {
@@ -161,8 +165,4 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
-}
-
-export function getMockHeadersForPath(pathname: string): Record<string, string> {
-  return buildDevMockHeaders(pathname);
 }

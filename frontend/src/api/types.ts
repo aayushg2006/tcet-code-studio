@@ -243,5 +243,6 @@ export interface ProblemEditorData {
 export interface ApiErrorPayload {
   status: number;
   message: string;
+  loginUrl?: string;
   details?: unknown;
 }

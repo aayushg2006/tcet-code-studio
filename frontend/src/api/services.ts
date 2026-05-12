@@ -43,7 +43,11 @@ export type SubmissionsQuery = PaginationQuery & {
 };
 
 export const userApi = {
-  me: (pathname?: string) => apiRequest<UserEnvelope>("/api/users/me", { pathname }),
+  me: (pathname?: string, options?: { suppressAuthRedirect?: boolean }) =>
+    apiRequest<UserEnvelope>("/api/users/me", {
+      pathname,
+      suppressAuthRedirect: options?.suppressAuthRedirect,
+    }),
   getByEmail: (email: string, pathname?: string) =>
     apiRequest<UserEnvelope>(`/api/users/${encodeURIComponent(email)}`, { pathname }),
 };

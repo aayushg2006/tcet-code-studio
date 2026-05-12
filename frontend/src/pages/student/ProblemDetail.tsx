@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { cn } from "@/lib/utils";
-import { submissionsApi, problemsApi } from "@/api/services";
+import { submissionsApi, problemsApi, userApi } from "@/api/services";
 import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
 import {
   EXECUTABLE_LANGUAGES,
@@ -186,6 +186,12 @@ export default function ProblemDetail() {
     enabled: Boolean(id),
   });
 
+  const { data: currentUserData } = useQuery({
+    queryKey: ["student-problem-current-user"],
+    queryFn: () => userApi.me(`/student/problems/${id}`, { suppressAuthRedirect: true }),
+    retry: false,
+  });
+
   const submissions = useMemo(
     () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [submissionsData?.items],
@@ -267,9 +273,19 @@ export default function ProblemDetail() {
       void beginSubmissionPolling(data.submission_id);
     },
     onError: (error) => {
-      toast.error((error as Error).message || "Submit failed");
+      const message = (error as Error).message || "Submit failed";
+      if (message.toLowerCase().includes("not allowed")) {
+        toast.error("Submission is allowed only for STUDENT role. Please sign in as a student.");
+        return;
+      }
+
+      toast.error(message);
     },
   });
+
+  if (currentUserData?.user.role === "FACULTY") {
+    return <Navigate to="/faculty/dashboard" replace />;
+  }
 
   if (problemLoading) {
     return (

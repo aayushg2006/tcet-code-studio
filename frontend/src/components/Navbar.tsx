@@ -1,29 +1,60 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { Moon, Sun, GraduationCap, Briefcase } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { userApi } from "@/api/services";
+import type { UserRole } from "@/api/types";
 
-const studentLinks = [
-  { to: "/student/dashboard", label: "Dashboard" },
-  { to: "/student/problems", label: "Problems" },
-  { to: "/student/leaderboard", label: "Leaderboard" },
-  { to: "/student/profile", label: "Profile" },
-];
-const facultyLinks = [
-  { to: "/faculty/dashboard", label: "Dashboard" },
-  { to: "/faculty/problems", label: "Manage" },
-  { to: "/faculty/create-problem", label: "Create" },
-  { to: "/faculty/submissions", label: "Submissions" },
-  { to: "/faculty/leaderboard", label: "Leaderboard" },
-];
+const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
+  STUDENT: [
+    { to: "/student/dashboard", label: "Dashboard" },
+    { to: "/student/problems", label: "Problems" },
+    { to: "/student/leaderboard", label: "Leaderboard" },
+    { to: "/student/profile", label: "Profile" },
+  ],
+  FACULTY: [
+    { to: "/faculty/dashboard", label: "Dashboard" },
+    { to: "/faculty/problems", label: "Manage" },
+    { to: "/faculty/create-problem", label: "Create" },
+    { to: "/faculty/submissions", label: "Submissions" },
+    { to: "/faculty/leaderboard", label: "Leaderboard" },
+  ],
+};
+
+function getAvatarFallback(name: string | null | undefined, role: UserRole): string {
+  if (!name) {
+    return role === "FACULTY" ? "FC" : "ST";
+  }
+
+  const initials = name
+    .split(" ")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return initials || (role === "FACULTY" ? "FC" : "ST");
+}
 
 export function Navbar() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
-  const isFaculty = pathname.startsWith("/faculty");
-  const links = isFaculty ? facultyLinks : studentLinks;
+  const userQuery = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => userApi.me(pathname, { suppressAuthRedirect: true }),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const fallbackRole: UserRole = pathname.startsWith("/faculty") ? "FACULTY" : "STUDENT";
+  const role = userQuery.data?.user.role ?? fallbackRole;
+  const links = linksByRole[role];
+  const showLinks = pathname.startsWith("/student") || pathname.startsWith("/faculty");
+  const avatarText = getAvatarFallback(userQuery.data?.user.name, role);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground dark:bg-card dark:text-foreground">
@@ -37,7 +68,7 @@ export function Navbar() {
         </Link>
 
         <nav className="ml-6 hidden lg:flex items-center gap-1">
-          {links.map(l => (
+          {showLinks && links.map(l => (
             <NavLink
               key={l.to}
               to={l.to}
@@ -54,15 +85,6 @@ export function Navbar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="hidden sm:flex rounded-md border border-white/20 dark:border-border overflow-hidden">
-            <Link to="/student/dashboard" className={cn("px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5", !isFaculty ? "bg-accent text-accent-foreground" : "hover:bg-white/10 dark:hover:bg-secondary")}>
-              <GraduationCap className="h-3.5 w-3.5" /> Student
-            </Link>
-            <Link to="/faculty/dashboard" className={cn("px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5", isFaculty ? "bg-accent text-accent-foreground" : "hover:bg-white/10 dark:hover:bg-secondary")}>
-              <Briefcase className="h-3.5 w-3.5" /> Faculty
-            </Link>
-          </div>
-
           <Button
             variant="ghost"
             size="icon"
@@ -75,7 +97,7 @@ export function Navbar() {
 
           <Avatar className="h-9 w-9 ring-2 ring-accent/50">
             <AvatarFallback className="bg-accent text-accent-foreground text-xs font-bold">
-              {isFaculty ? "PS" : "AM"}
+              {avatarText}
             </AvatarFallback>
           </Avatar>
         </div>
