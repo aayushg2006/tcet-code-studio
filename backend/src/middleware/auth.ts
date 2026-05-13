@@ -86,8 +86,9 @@ function buildLoginUrl(req: Parameters<RequestHandler>[0]): string {
 
 function redirectToLogin(req: Parameters<RequestHandler>[0], res: Parameters<RequestHandler>[1]): void {
   const loginUrl = buildLoginUrl(req);
+  const isSsoCallback = req.originalUrl.startsWith("/api/auth/sso/callback");
 
-  if (req.originalUrl.startsWith("/api/")) {
+  if (req.originalUrl.startsWith("/api/") && !isSsoCallback) {
     res.status(401).json({
       message: "Authentication required.",
       loginUrl,
@@ -124,7 +125,13 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     role: authUser.role,
     name: authUser.name ?? null,
     uid: authUser.uid ?? null,
+    isProfileComplete: false,
+    rollNumber: null,
     department: authUser.department ?? null,
+    semester: null,
+    linkedInUrl: null,
+    githubUrl: null,
+    skills: [],
     rating: 0,
     score: 0,
     problemsSolved: 0,
@@ -153,6 +160,7 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
       }) as JwtPayload;
     } catch (verificationError) {
       if (verificationError instanceof jwt.TokenExpiredError) {
+        res.clearCookie(TOKEN_COOKIE_NAME, { path: "/" });
         redirectToLogin(req, res);
         return;
       }
@@ -161,7 +169,9 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
         verificationError instanceof jwt.JsonWebTokenError ||
         verificationError instanceof jwt.NotBeforeError
       ) {
-        res.status(403).json({ message: "Invalid authentication token." });
+        // Stale/corrupt cookies should trigger a clean re-login, not leave user stuck.
+        res.clearCookie(TOKEN_COOKIE_NAME, { path: "/" });
+        redirectToLogin(req, res);
         return;
       }
 

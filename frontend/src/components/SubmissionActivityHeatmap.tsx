@@ -11,8 +11,6 @@ import {
   subDays,
 } from "date-fns";
 
-import { Card } from "@/components/ui/card";
-
 type ActivityPoint = {
   createdAt: string;
 };
@@ -51,14 +49,14 @@ function getIntensityClass(count: number, inRange: boolean): string {
   }
 
   if (count < 3) {
-    return "bg-success/55";
+    return "bg-primary/35";
   }
 
   if (count < 6) {
-    return "bg-success/75";
+    return "bg-primary/60";
   }
 
-  return "bg-success";
+  return "bg-primary";
 }
 
 function computeMaxStreak(cells: DayCell[]): number {
@@ -125,78 +123,72 @@ export function SubmissionActivityHeatmap({ submissions }: SubmissionActivityHea
   const maxStreak = computeMaxStreak(cells);
 
   return (
-    <Card className="p-6 shadow-card">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="min-w-[860px] space-y-4">
+      <div className="flex flex-wrap items-center gap-6 text-sm">
         <div>
-          <h2 className="font-display text-xl font-bold">Submission Activity</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {totalSubmissions} submissions in the past one year
-          </p>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Submissions (1Y)</div>
+          <div className="font-display text-xl font-bold">{totalSubmissions}</div>
         </div>
-        <div className="flex gap-6 text-sm">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Active days</div>
-            <div className="font-display text-xl font-bold">{activeDays}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Max streak</div>
-            <div className="font-display text-xl font-bold">{maxStreak}</div>
-          </div>
+        <div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Active days</div>
+          <div className="font-display text-xl font-bold">{activeDays}</div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Max streak</div>
+          <div className="font-display text-xl font-bold">{maxStreak}</div>
         </div>
       </div>
 
-      <div className="mt-6 overflow-x-auto">
-        <div className="inline-flex min-w-full flex-col gap-3">
-          <div className="flex gap-1 pl-8 text-xs text-muted-foreground">
-            {weeks.map((week) => {
-              const firstVisibleDay = week.find((day) => day.inRange);
-              const label = firstVisibleDay
-                ? monthLabels.find((month) => month.key === toDayKey(startOfWeek(firstVisibleDay.date, { weekStartsOn: 0 })))?.label
-                : undefined;
+      <div className="inline-flex min-w-full flex-col gap-3">
+        <div className="flex gap-1 pl-8 text-xs text-muted-foreground">
+          {weeks.map((week) => {
+            const firstVisibleDay = week.find((day) => day.inRange);
+            const label = firstVisibleDay
+              ? monthLabels.find((month) => month.key === toDayKey(startOfWeek(firstVisibleDay.date, { weekStartsOn: 0 })))?.label
+              : undefined;
 
-              return (
-                <div key={toDayKey(week[0].date)} className="w-3">
-                  {label ?? ""}
-                </div>
-              );
-            })}
+            return (
+              <div key={toDayKey(week[0].date)} className="w-3">
+                {label ?? ""}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-2">
+          <div className="flex flex-col justify-between py-0.5 text-[10px] text-muted-foreground">
+            <span>Sun</span>
+            <span>Tue</span>
+            <span>Thu</span>
+            <span>Sat</span>
           </div>
-
-          <div className="flex gap-2">
-            <div className="flex flex-col justify-between py-0.5 text-[10px] text-muted-foreground">
-              <span>Sun</span>
-              <span>Tue</span>
-              <span>Thu</span>
-              <span>Sat</span>
-            </div>
-            <div className="flex gap-1">
-              {weeks.map((week) => (
-                <div key={toDayKey(week[0].date)} className="grid grid-rows-7 gap-1">
-                  {week.map((day) => {
-                    const title = `${format(day.date, "dd MMM yyyy")} • ${day.count} submission${day.count === 1 ? "" : "s"}`;
-                    return (
-                      <div
-                        key={toDayKey(day.date)}
-                        title={title}
-                        className={`h-3 w-3 rounded-[3px] border border-border/40 ${getIntensityClass(day.count, day.inRange)}`}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
-            <span>Less</span>
-            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-secondary" />
-            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-success/55" />
-            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-success/75" />
-            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-success" />
-            <span>More</span>
+          <div className="flex gap-1">
+            {weeks.map((week) => (
+              <div key={toDayKey(week[0].date)} className="grid grid-rows-7 gap-1">
+                {week.map((day) => {
+                  const title = `${format(day.date, "dd MMM yyyy")} • ${day.count} submission${day.count === 1 ? "" : "s"}`;
+                  return (
+                    <div
+                      key={toDayKey(day.date)}
+                      title={title}
+                      className={`h-3 w-3 rounded-[3px] border border-border/40 ${getIntensityClass(day.count, day.inRange)}`}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
+
+        <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+          <span>Less</span>
+          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-secondary" />
+          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/35" />
+          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/60" />
+          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary" />
+          <span>More</span>
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }

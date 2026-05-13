@@ -11,9 +11,21 @@ import type { UserRecord, UserProfileResponse } from "./user.model";
 import { toUserProfileResponse } from "./user.model";
 import type { UserRepository } from "./user.repository";
 
+export interface UpdateCurrentUserProfileInput {
+  rollNumber: string;
+  department: string;
+  semester: number;
+  linkedInUrl: string | null;
+  githubUrl: string | null;
+}
+
 export interface UserService {
   getCurrentUser(user: AuthenticatedUser): Promise<UserProfileResponse>;
   getUserByEmail(email: string): Promise<UserProfileResponse>;
+  updateCurrentUserProfile(
+    user: AuthenticatedUser,
+    input: UpdateCurrentUserProfileInput,
+  ): Promise<UserProfileResponse>;
 }
 
 interface UserServiceDependencies {
@@ -28,7 +40,13 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     role: normalizeRole(authUser.role),
     name: authUser.name ?? null,
     uid: authUser.uid ?? null,
+    isProfileComplete: false,
+    rollNumber: null,
     department: authUser.department ?? null,
+    semester: null,
+    linkedInUrl: null,
+    githubUrl: null,
+    skills: [],
     rating: 0,
     score: 0,
     problemsSolved: 0,
@@ -49,7 +67,13 @@ function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date)
     role: normalizeRole(authUser.role),
     name: authUser.name ?? existing.name,
     uid: authUser.uid ?? existing.uid,
-    department: authUser.department ?? existing.department,
+    department: existing.department ?? authUser.department ?? null,
+    isProfileComplete: existing.isProfileComplete,
+    rollNumber: existing.rollNumber,
+    semester: existing.semester,
+    linkedInUrl: existing.linkedInUrl,
+    githubUrl: existing.githubUrl,
+    skills: existing.skills,
     score: existing.rating,
     lastLoginAt: now,
     updatedAt: now,
@@ -92,6 +116,30 @@ export function createUserService(dependencies: UserServiceDependencies): UserSe
       }
 
       return buildRankedProfileResponse(user, dependencies.leaderboardRepository);
+    },
+
+    async updateCurrentUserProfile(authUser, input) {
+      const now = dependencies.now();
+      const existingUser = await dependencies.userRepository.getByEmail(authUser.email);
+      const baseUser = existingUser ? mergeUser(existingUser, authUser, now) : createDefaultUser(authUser, now);
+
+      const updatedUser: UserRecord = {
+        ...baseUser,
+        isProfileComplete: true,
+        rollNumber: input.rollNumber,
+        department: input.department,
+        semester: input.semester,
+        linkedInUrl: input.linkedInUrl,
+        githubUrl: input.githubUrl,
+        updatedAt: now,
+      };
+
+      await dependencies.userRepository.save(updatedUser);
+      if (isRankedLeaderboardEntry(updatedUser)) {
+        await dependencies.leaderboardRepository.save(buildLeaderboardEntryFromUser(updatedUser));
+      }
+
+      return buildRankedProfileResponse(updatedUser, dependencies.leaderboardRepository);
     },
   };
 }

@@ -6,7 +6,13 @@ export interface UserRecord {
   role: UserRole;
   name: string | null;
   uid: string | null;
+  isProfileComplete: boolean;
+  rollNumber: string | null;
   department: string | null;
+  semester: number | null;
+  linkedInUrl: string | null;
+  githubUrl: string | null;
+  skills: string[];
   rating: number;
   score: number;
   problemsSolved: number;
@@ -24,7 +30,13 @@ export interface UserProfileResponse {
   role: UserRole;
   name: string | null;
   uid: string | null;
+  isProfileComplete: boolean;
+  rollNumber: string | null;
   department: string | null;
+  semester: number | null;
+  linkedInUrl: string | null;
+  githubUrl: string | null;
+  skills: string[];
   rating: number;
   score: number;
   problemsSolved: number;
@@ -44,7 +56,13 @@ export function toUserProfileResponse(user: UserRecord, rank: number | null): Us
     role: user.role,
     name: user.name,
     uid: user.uid,
+    isProfileComplete: user.isProfileComplete,
+    rollNumber: user.rollNumber,
     department: user.department,
+    semester: user.semester,
+    linkedInUrl: user.linkedInUrl,
+    githubUrl: user.githubUrl,
+    skills: user.skills,
     rating: user.rating,
     score: user.rating,
     problemsSolved: user.problemsSolved,

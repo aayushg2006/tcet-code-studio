@@ -25,6 +25,7 @@ function formatTime(isoDate: string): string {
 
 const actions = [
   { to: "/faculty/create-problem", label: "Create Problem", icon: FilePlus2, primary: true },
+  { to: "/faculty/create-contest", label: "Create Contest", icon: Trophy },
   { to: "/faculty/problems", label: "Manage Problems", icon: ListChecks },
   { to: "/faculty/submissions", label: "View Submissions", icon: FileCode2 },
   { to: "/faculty/leaderboard", label: "View Leaderboard", icon: Trophy },

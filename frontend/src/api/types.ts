@@ -58,7 +58,13 @@ export interface UserProfile {
   role: UserRole;
   name: string | null;
   uid: string | null;
+  isProfileComplete: boolean;
+  rollNumber: string | null;
   department: string | null;
+  semester: number | null;
+  linkedInUrl: string | null;
+  githubUrl: string | null;
+  skills: string[];
   rating: number;
   score: number;
   problemsSolved: number;
@@ -74,6 +80,16 @@ export interface UserProfile {
 
 export interface UserEnvelope {
   user: UserProfile;
+}
+
+export type StudentDepartment = "AI&DS" | "COMP" | "IT" | "EXTC";
+
+export interface CompleteProfilePayload {
+  rollNumber: string;
+  department: StudentDepartment;
+  semester: number;
+  linkedInUrl: string | null;
+  githubUrl: string | null;
 }
 
 export interface ProblemTestCase {

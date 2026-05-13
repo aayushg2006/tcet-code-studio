@@ -1,17 +1,34 @@
-import { Trophy, Mail, GraduationCap, Eye } from "lucide-react";
-import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useParams } from "react-router-dom";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 
 import { AppLayout } from "@/components/AppLayout";
-import { StatusBadge } from "@/components/Badges";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { submissionsApi, userApi } from "@/api/services";
 import { SubmissionActivityHeatmap } from "@/components/SubmissionActivityHeatmap";
-import { userApi, submissionsApi } from "@/api/services";
-import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+
+const difficultyData = [
+  { name: "Easy", value: 45, color: "#22c55e" },
+  { name: "Medium", value: 30, color: "#eab308" },
+  { name: "Hard", value: 10, color: "#ef4444" },
+];
+
+const languageData = [
+  { name: "Java", count: 65 },
+  { name: "Python", count: 15 },
+  { name: "C++", count: 5 },
+];
+
+const recentAcceptedSubmissions = [
+  { title: "Two Sum Variant", language: "Java", when: "Today, 10:42 AM" },
+  { title: "Binary Search Bounds", language: "Python", when: "Yesterday, 7:18 PM" },
+  { title: "Graph BFS Reachability", language: "C++", when: "Yesterday, 11:09 AM" },
+  { title: "Prefix Sum Queries", language: "Java", when: "2 days ago" },
+];
 
 function initialsFromName(name: string | null, email: string): string {
   if (!name) {
@@ -26,8 +43,13 @@ function initialsFromName(name: string | null, email: string): string {
     .join("");
 }
 
-function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleString();
+function statCard(label: string, value: string | number) {
+  return (
+    <Card className="border border-border bg-background p-5 shadow-none">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-2 text-4xl font-bold leading-none">{value}</p>
+    </Card>
+  );
 }
 
 export default function StudentProfile() {
@@ -35,18 +57,14 @@ export default function StudentProfile() {
   const targetEmail = emailParam ? decodeURIComponent(emailParam) : null;
   const isFacultyView = Boolean(targetEmail);
   const pathname = isFacultyView ? `/faculty/students/${encodeURIComponent(targetEmail!)}` : "/student/profile";
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
-  const { data: userData, isLoading: userLoading, isError: userError, error: userErrorObj } = useQuery({
+  const { data: userData, isLoading, isError, error } = useQuery({
     queryKey: ["student-profile", targetEmail ?? "self"],
-    queryFn: () =>
-      isFacultyView && targetEmail
-        ? userApi.getByEmail(targetEmail, pathname)
-        : userApi.me(pathname),
+    queryFn: () => (isFacultyView && targetEmail ? userApi.getByEmail(targetEmail, pathname) : userApi.me(pathname)),
   });
 
-  const { data: submissionData, isLoading: submissionsLoading } = useQuery({
-    queryKey: ["student-submissions", targetEmail ?? "self"],
+  const { data: submissionsData } = useQuery({
+    queryKey: ["student-profile-submissions", targetEmail ?? "self"],
     queryFn: () =>
       submissionsApi.list(
         {
@@ -58,19 +76,12 @@ export default function StudentProfile() {
     enabled: Boolean(userData?.user),
   });
 
-  const { data: selectedSubmissionData, isLoading: selectedSubmissionLoading } = useQuery({
-    queryKey: ["student-profile-submission-detail", selectedSubmissionId, targetEmail ?? "self"],
-    queryFn: () => submissionsApi.getById(selectedSubmissionId || "", pathname),
-    enabled: Boolean(selectedSubmissionId),
-  });
-
-  const profile = userData?.user;
   const submissions = useMemo(
-    () => [...(submissionData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
-    [submissionData?.items],
+    () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    [submissionsData?.items],
   );
 
-  if (userLoading) {
+  if (isLoading) {
     return (
       <AppLayout>
         <div className="container py-8 text-muted-foreground">Loading profile...</div>
@@ -78,136 +89,164 @@ export default function StudentProfile() {
     );
   }
 
-  if (userError || !profile) {
+  if (isError || !userData?.user) {
     return (
       <AppLayout>
-        <div className="container py-8 text-destructive">{(userErrorObj as Error)?.message || "Failed to load profile"}</div>
+        <div className="container py-8 text-destructive">{(error as Error)?.message || "Failed to load profile"}</div>
       </AppLayout>
     );
   }
 
-  const avatarInitials = initialsFromName(profile.name, profile.email);
-  const heading = isFacultyView ? "Student Profile" : "Profile";
+  const profile = userData.user;
+  const initials = initialsFromName(profile.name, profile.email);
 
   return (
     <AppLayout>
-      <div className="container space-y-6 py-8">
-        <div>
-          <h1 className="font-display text-3xl font-bold">{heading}</h1>
-          <p className="mt-1 text-muted-foreground">
-            {isFacultyView ? "Inspect student activity, submissions, and performance." : "Track your progress and coding rhythm."}
-          </p>
+      <div className="container space-y-6 bg-slate-50 py-8 dark:bg-background">
+        <div className="space-y-1">
+          <h1 className="font-display text-3xl font-bold">Academic Profile Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Student identity, endorsement profile, and performance snapshot.</p>
         </div>
 
-        <Card className="overflow-hidden shadow-elevated">
-          <div className="h-40 bg-gradient-hero" />
-          <div className="bg-card px-6 pb-6 pt-5">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-                <Avatar className="-mt-16 h-24 w-24 shrink-0 border-4 border-background shadow-card sm:-mt-20">
-                  <AvatarFallback className="bg-accent text-2xl font-bold text-accent-foreground">{avatarInitials}</AvatarFallback>
-                </Avatar>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
+          <div className="md:col-span-4">
+            <Card className="relative border border-border bg-background p-6 shadow-none">
+              <Badge className="absolute right-6 top-6 border-0 bg-green-600 text-white hover:bg-green-600">
+                ✓ Verified Profile
+              </Badge>
 
-                <div className="space-y-2 pb-1">
-                  <h1 className="font-display text-3xl font-bold leading-none md:text-4xl">{profile.name ?? "Student"}</h1>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                    <span className="font-mono-code">{profile.uid ?? "TCET Student"}</span>
-                    <span className="flex items-center gap-1">
-                      <GraduationCap className="h-4 w-4" /> {profile.department ?? "Department unavailable"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Mail className="h-4 w-4" /> {profile.email}
-                    </span>
-                  </div>
+              <div className="flex items-center gap-4 pt-8">
+                <Avatar className="h-14 w-14 border border-border">
+                  <AvatarFallback className="bg-slate-100 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <p className="truncate text-xl font-bold">{profile.name ?? "Student"}</p>
+                  <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
                 </div>
               </div>
 
-              <div className="inline-flex self-start rounded-xl bg-gradient-accent px-4 py-2 font-bold text-accent-foreground lg:self-auto">
-                <span className="flex items-center gap-2">
-                  <Trophy className="h-5 w-5" /> Rank {profile.rank ? `#${profile.rank}` : "N/A"}
-                </span>
+              <Separator className="my-5" />
+
+              <div className="flex flex-col gap-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Roll Number</span>
+                  <span className="font-medium">{profile.rollNumber ?? "Not set"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Department</span>
+                  <span className="font-medium">{profile.department ?? "Not set"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Semester</span>
+                  <span className="font-medium">{profile.semester ?? "Not set"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">GitHub</span>
+                  <a
+                    href={profile.githubUrl ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="max-w-[62%] truncate font-medium text-primary hover:underline"
+                  >
+                    {profile.githubUrl ?? "Not set"}
+                  </a>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">LinkedIn</span>
+                  <a
+                    href={profile.linkedInUrl ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="max-w-[62%] truncate font-medium text-primary hover:underline"
+                  >
+                    {profile.linkedInUrl ?? "Not set"}
+                  </a>
+                </div>
               </div>
-            </div>
-          </div>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: "Solved", value: profile.problemsSolved },
-            { label: "Submissions", value: profile.submissionCount },
-            { label: "Accepted", value: profile.acceptedSubmissionCount },
-            { label: "Accuracy", value: `${profile.accuracy}%` },
-          ].map((stat) => (
-            <Card key={stat.label} className="flex min-h-[120px] flex-col justify-between p-5 shadow-card">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{stat.label}</div>
-              <div className="font-display text-3xl font-bold leading-none">{stat.value}</div>
             </Card>
-          ))}
-        </div>
+          </div>
 
-        <SubmissionActivityHeatmap submissions={submissions} />
+          <div className="space-y-6 md:col-span-8">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {statCard("Global Rank", profile.rank ? `#${profile.rank}` : "N/A")}
+              {statCard("Total Solved", profile.problemsSolved)}
+              {statCard("Accuracy", `${profile.accuracy}%`)}
+            </div>
 
-        <Card className="p-6 shadow-card">
-          <h2 className="mb-4 font-display text-xl font-bold">Submission History</h2>
-          <div className="divide-y divide-border">
-            {submissionsLoading && <div className="py-4 text-sm text-muted-foreground">Loading submissions...</div>}
-            {!submissionsLoading && submissions.length === 0 && (
-              <div className="py-4 text-sm text-muted-foreground">No submissions yet.</div>
-            )}
-            {!submissionsLoading &&
-              submissions.map((submission) => (
-                <div key={submission.id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="font-medium">{submission.problemTitle}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {toLanguageLabel(submission.language)} {"\u2022"} {formatDate(submission.createdAt)}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card className="border border-border bg-background p-5 shadow-none">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
+                <div className="mt-4 flex items-center justify-center">
+                  <PieChart width={260} height={220}>
+                    <Pie
+                      data={difficultyData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={78}
+                      innerRadius={45}
+                      dataKey="value"
+                      strokeWidth={1}
+                    >
+                      {difficultyData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </div>
+              </Card>
+
+              <Card className="border border-border bg-background p-5 shadow-none">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
+                <div className="mt-4 overflow-x-auto">
+                  <BarChart width={320} height={220} data={languageData}>
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
+                  </BarChart>
+                </div>
+              </Card>
+            </div>
+
+            <Card className="border border-border bg-background shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
+              </CardHeader>
+              <CardContent className="flex justify-center overflow-x-auto pb-6">
+                <SubmissionActivityHeatmap submissions={submissions} />
+              </CardContent>
+            </Card>
+
+            <Card className="border border-border bg-background p-5 shadow-none">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Activity</h2>
+              <div className="mt-4 overflow-hidden rounded-md border border-border">
+                <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                  <div className="col-span-6">Problem</div>
+                  <div className="col-span-3">Language</div>
+                  <div className="col-span-3">Status</div>
+                </div>
+                {recentAcceptedSubmissions.map((entry) => (
+                  <div key={`${entry.title}-${entry.when}`} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
+                    <div className="col-span-6">
+                      <p className="font-medium">{entry.title}</p>
+                      <p className="text-xs text-muted-foreground">{entry.when}</p>
+                    </div>
+                    <div className="col-span-3 self-center">{entry.language}</div>
+                    <div className="col-span-3 self-center">
+                      <Badge variant="secondary" className="border border-green-200 bg-green-50 text-green-700 shadow-none dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                        Accepted
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-mono-code text-xs text-muted-foreground">{submission.runtimeMs} ms</span>
-                    <StatusBadge status={toStatusLabel(submission.status)} />
-                    <Button size="sm" variant="outline" onClick={() => setSelectedSubmissionId(submission.id)}>
-                      <Eye className="mr-1 h-3.5 w-3.5" /> View Code
-                    </Button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </Card>
-      </div>
-
-      <Dialog open={Boolean(selectedSubmissionId)} onOpenChange={(open) => !open && setSelectedSubmissionId(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="font-display">
-              {(selectedSubmissionData?.submission.problemTitle ?? "Submission")} {"\u2022"}{" "}
-              {selectedSubmissionData?.submission.userName ?? profile.name ?? profile.email}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedSubmissionLoading && <div className="text-sm text-muted-foreground">Loading code...</div>}
-          {!selectedSubmissionLoading && selectedSubmissionData?.submission && (
-            <>
-              <div className="flex flex-wrap items-center gap-3 text-xs">
-                <span className="font-mono-code text-muted-foreground">
-                  {selectedSubmissionData.submission.userUid ?? selectedSubmissionData.submission.userEmail}
-                </span>
-                <StatusBadge status={toStatusLabel(selectedSubmissionData.submission.status)} />
-                <span className="font-mono-code text-muted-foreground">
-                  {toLanguageLabel(selectedSubmissionData.submission.language)}
-                </span>
-                <span className="font-mono-code text-muted-foreground">
-                  {selectedSubmissionData.submission.runtimeMs} ms {"\u2022"}{" "}
-                  {(selectedSubmissionData.submission.memoryKb / 1024).toFixed(1)} MB
-                </span>
+                ))}
               </div>
-              <pre className="max-h-96 overflow-auto rounded-lg bg-[hsl(220_50%_8%)] p-4 font-mono-code text-xs text-[hsl(40_30%_92%)]">
-                {selectedSubmissionData.submission.code || "// No code payload returned"}
-              </pre>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+            </Card>
+          </div>
+        </div>
+      </div>
     </AppLayout>
   );
 }
-

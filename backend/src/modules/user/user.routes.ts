@@ -10,6 +10,7 @@ export function createUserRouter(dependencies: ApplicationDependencies): Router 
 
   router.use(dependencies.authMiddleware);
   router.get("/me", asyncHandler(controller.getCurrentUser));
+  router.patch("/me", requireRole("STUDENT"), asyncHandler(controller.updateCurrentUserProfile));
   router.get("/:email", requireRole("FACULTY"), asyncHandler(controller.getUserByEmail));
 
   return router;

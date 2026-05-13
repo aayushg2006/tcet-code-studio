@@ -1,5 +1,6 @@
 import { apiRequest } from "@/api/client";
 import type {
+  CompleteProfilePayload,
   LeaderboardItem,
   ManageProblemDetail,
   ManageProblemSummary,
@@ -47,6 +48,12 @@ export const userApi = {
     apiRequest<UserEnvelope>("/api/users/me", {
       pathname,
       suppressAuthRedirect: options?.suppressAuthRedirect,
+    }),
+  updateProfile: (payload: CompleteProfilePayload, pathname?: string) =>
+    apiRequest<UserEnvelope>("/api/users/me", {
+      method: "PATCH",
+      body: payload,
+      pathname,
     }),
   getByEmail: (email: string, pathname?: string) =>
     apiRequest<UserEnvelope>(`/api/users/${encodeURIComponent(email)}`, { pathname }),

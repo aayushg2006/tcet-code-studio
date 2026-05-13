@@ -36,5 +36,13 @@ export function RoleRoute({ allowedRole, children }: RoleRouteProps) {
     return <Navigate to={getHomePathForRole(user.role)} replace />;
   }
 
+  if (user.role === "STUDENT" && !user.isProfileComplete && pathname !== "/complete-profile") {
+    return <Navigate to="/complete-profile" replace />;
+  }
+
+  if (user.role === "STUDENT" && user.isProfileComplete && pathname === "/complete-profile") {
+    return <Navigate to="/student/dashboard" replace />;
+  }
+
   return children;
 }
