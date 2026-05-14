@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { leaderboardApi } from "@/api/services";
 import { Link } from "react-router-dom";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
+import { DEPARTMENTS, type Department } from "@/api/types";
 
 function downloadCsv(filename: string, content: string): void {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -23,13 +25,24 @@ function downloadCsv(filename: string, content: string): void {
 }
 
 export default function FacultyLeaderboard() {
+  const [department, setDepartment] = useState<Department | "All">("All");
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-leaderboard"],
-    queryFn: () => leaderboardApi.list({ pageSize: 100 }, "/faculty/leaderboard"),
+    queryKey: ["faculty-leaderboard", department],
+    queryFn: () =>
+      leaderboardApi.list(
+        {
+          pageSize: 100,
+          department: department === "All" ? undefined : department,
+        },
+        "/faculty/leaderboard",
+      ),
   });
 
   const exportMutation = useMutation({
-    mutationFn: () => leaderboardApi.exportCsv("/faculty/leaderboard"),
+    mutationFn: () =>
+      leaderboardApi.exportCsv("/faculty/leaderboard", {
+        department: department === "All" ? undefined : department,
+      }),
     onSuccess: (csv) => {
       downloadCsv("leaderboard.csv", csv);
       toast.success("CSV export ready");
@@ -50,9 +63,23 @@ export default function FacultyLeaderboard() {
             <h1 className="font-display text-3xl font-bold">Student Leaderboard</h1>
             <p className="mt-1 text-muted-foreground">Track performance across the cohort.</p>
           </div>
-          <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending}>
-            <Download className="mr-2 h-4 w-4" /> {exportMutation.isPending ? "Exporting..." : "Export CSV"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={department}
+              onChange={(event) => setDepartment(event.target.value as Department | "All")}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="All">All Departments</option>
+              {DEPARTMENTS.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+            <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending}>
+              <Download className="mr-2 h-4 w-4" /> {exportMutation.isPending ? "Exporting..." : "Export CSV"}
+            </Button>
+          </div>
         </div>
 
         <Card className="overflow-hidden shadow-card">

@@ -9,6 +9,7 @@ export function createProblemRouter(dependencies: ApplicationDependencies): Rout
   const controller = createProblemController(dependencies.problemService);
 
   router.use(dependencies.authMiddleware);
+  router.use(dependencies.profileCompletionMiddleware);
 
   router.get("/manage", requireRole("FACULTY"), asyncHandler(controller.listManageProblems));
   router.get("/manage/:problemId", requireRole("FACULTY"), asyncHandler(controller.getManageProblemDetail));

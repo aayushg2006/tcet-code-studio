@@ -4,13 +4,20 @@ import { wrapSubmissionCode } from "../../execution/code-wrapper";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
-import type { SupportedLanguage } from "../../shared/types/domain";
-import { isFinalSubmissionStatus } from "../../shared/utils/normalize";
+import type { Department, SupportedLanguage } from "../../shared/types/domain";
+import { isFinalSubmissionStatus, normalizeDepartment } from "../../shared/utils/normalize";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { ExecutionProvider, ExecutionResult } from "../../execution/execution-provider";
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import { buildLeaderboardEntryFromUser } from "../leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
+import {
+  calculateAttemptScore,
+  computeAttemptTimeTakenMs,
+  type CodingContestQuestion,
+  type ContestAttemptRecord,
+} from "../contest/contest.model";
+import type { ContestAttemptRepository, ContestRepository } from "../contest/contest.repository";
 import type { ProblemRecord } from "../problem/problem.model";
 import type { ProblemRepository } from "../problem/problem.repository";
 import type { UserRecord } from "../user/user.model";
@@ -41,6 +48,8 @@ export interface SubmissionService {
 
 interface SubmissionServiceDependencies {
   problemRepository: ProblemRepository;
+  contestRepository: ContestRepository;
+  contestAttemptRepository: ContestAttemptRepository;
   submissionRepository: SubmissionRepository;
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
@@ -62,7 +71,10 @@ export interface SubmissionWriteInput {
 
 export interface SubmissionListQuery extends PaginationInput {
   problemId?: string;
+  contestId?: string;
+  sourceType?: SubmissionRecord["sourceType"];
   userEmail?: string;
+  studentDepartment?: Department;
   status?: SubmissionRecord["status"];
   language?: SupportedLanguage;
 }
@@ -109,8 +121,9 @@ async function ensureUser(
     name: authUser.name ?? null,
     uid: authUser.uid ?? null,
     isProfileComplete: false,
+    designation: null,
     rollNumber: null,
-    department: authUser.department ?? null,
+    department: normalizeDepartment(authUser.department) ?? null,
     semester: null,
     linkedInUrl: null,
     githubUrl: null,
@@ -137,6 +150,10 @@ function ensureVisibleProblem(problem: ProblemRecord | null, user: Authenticated
   }
 
   if (user.role === "STUDENT" && problem.lifecycleState !== "Published") {
+    throw new AppError(404, "Problem not found");
+  }
+
+  if (user.role === "STUDENT" && problem.targetDepartment && problem.targetDepartment !== user.department) {
     throw new AppError(404, "Problem not found");
   }
 
@@ -174,6 +191,27 @@ function buildInternalErrorResult(totalCount: number, message: string): Executio
   };
 }
 
+function withDerivedContestAttemptFields(attempt: ContestAttemptRecord): ContestAttemptRecord {
+  return {
+    ...attempt,
+    violationPenaltyPoints: attempt.violationCount * 5,
+    score: calculateAttemptScore(attempt.questionStates, attempt.violationCount),
+    timeTakenMs: computeAttemptTimeTakenMs(attempt),
+  };
+}
+
+function computeContestCodingAwardedPoints(
+  question: CodingContestQuestion,
+  passedCount: number,
+  totalCount: number,
+): number {
+  if (totalCount <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((question.points * passedCount) / totalCount));
+}
+
 function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
   rating: number;
   problemsSolved: number;
@@ -182,7 +220,9 @@ function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
   accuracy: number;
   lastAcceptedAt: Date | null;
 } {
-  const finalized = submissions.filter((submission) => isFinalSubmissionStatus(submission.status));
+  const finalized = submissions.filter(
+    (submission) => submission.sourceType === "problem" && isFinalSubmissionStatus(submission.status),
+  );
   const accepted = finalized.filter((submission) => submission.status === "ACCEPTED");
   const firstAcceptedByProblem = new Map<string, SubmissionRecord>();
 
@@ -223,7 +263,9 @@ function calculateProblemAggregateSnapshot(submissions: SubmissionRecord[]): {
   acceptedSubmissions: number;
   acceptanceRate: number;
 } {
-  const finalized = submissions.filter((submission) => isFinalSubmissionStatus(submission.status));
+  const finalized = submissions.filter(
+    (submission) => submission.sourceType === "problem" && isFinalSubmissionStatus(submission.status),
+  );
   const acceptedSubmissions = finalized.filter((submission) => submission.status === "ACCEPTED").length;
 
   return {
@@ -320,6 +362,10 @@ async function finalizeSubmission(
 
   await dependencies.submissionRepository.save(updatedSubmission);
 
+  if (updatedSubmission.sourceType === "contest_coding") {
+    return updatedSubmission;
+  }
+
   const userSubmissions = await dependencies.submissionRepository.list({ userEmail: updatedSubmission.userEmail });
   const firstAcceptedByProblem = new Map<string, SubmissionRecord>();
 
@@ -394,16 +440,24 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
 
       await ensureUser(dependencies.userRepository, user, now);
+      const submissionUser = await dependencies.userRepository.getByEmail(user.email);
 
       const submission: SubmissionRecord = {
         id: `submission_${randomUUID()}`,
         queueJobId: null,
         judge0Token: null,
+        sourceType: "problem",
         userEmail: user.email,
         userRole: user.role,
+        userDepartment: submissionUser?.department ?? normalizeDepartment(user.department) ?? null,
+        resourceOwnerEmail: problem.createdBy,
+        resourceTargetDepartment: problem.targetDepartment,
         problemId: problem.id,
         problemTitleSnapshot: problem.title,
         problemDifficultySnapshot: problem.difficulty,
+        contestId: null,
+        contestTitleSnapshot: null,
+        contestQuestionId: null,
         code: input.code,
         language: input.language,
         status: "QUEUED",
@@ -456,11 +510,6 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         });
       }
 
-      const problem = await dependencies.problemRepository.getById(existingSubmission.problemId);
-      if (!problem) {
-        throw new AppError(404, "Problem not found");
-      }
-
       const runningSubmission: SubmissionRecord = {
         ...existingSubmission,
         queueJobId: queueJobId || existingSubmission.queueJobId,
@@ -472,16 +521,107 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       await dependencies.submissionRepository.save(runningSubmission);
 
       try {
-        const result = await dependencies.executionProvider.executeSubmission({
-          code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
-          language: runningSubmission.language,
-          testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
-          problemId: problem.id,
-          timeLimitSeconds: problem.timeLimitSeconds,
-          memoryLimitMb: problem.memoryLimitMb,
-        });
+        let result: ExecutionResult;
+        if (runningSubmission.sourceType === "contest_coding") {
+          const contest = runningSubmission.contestId
+            ? await dependencies.contestRepository.getById(runningSubmission.contestId)
+            : null;
+          if (!contest) {
+            throw new AppError(404, "Contest not found");
+          }
+
+          const question = contest.questions.find(
+            (item): item is CodingContestQuestion =>
+              item.id === runningSubmission.contestQuestionId && item.type === "Coding",
+          );
+          if (!question) {
+            throw new AppError(404, "Contest question not found");
+          }
+
+          result = await dependencies.executionProvider.executeSubmission({
+            code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
+            language: runningSubmission.language,
+            testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+            problemId: `${contest.id}:${question.id}`,
+            timeLimitSeconds: question.timeLimitSeconds,
+            memoryLimitMb: question.memoryLimitMb,
+          });
+        } else {
+          const problem = await dependencies.problemRepository.getById(runningSubmission.problemId);
+          if (!problem) {
+            throw new AppError(404, "Problem not found");
+          }
+
+          result = await dependencies.executionProvider.executeSubmission({
+            code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
+            language: runningSubmission.language,
+            testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
+            problemId: problem.id,
+            timeLimitSeconds: problem.timeLimitSeconds,
+            memoryLimitMb: problem.memoryLimitMb,
+          });
+        }
 
         const finalizedSubmission = await finalizeSubmission(dependencies, runningSubmission.id, result);
+        if (finalizedSubmission.sourceType === "contest_coding") {
+          const contest = finalizedSubmission.contestId
+            ? await dependencies.contestRepository.getById(finalizedSubmission.contestId)
+            : null;
+          const attempt =
+            contest && finalizedSubmission.contestId
+              ? await dependencies.contestAttemptRepository.getByContestAndUser(
+                  finalizedSubmission.contestId,
+                  finalizedSubmission.userEmail,
+                )
+              : null;
+
+          if (contest && attempt && finalizedSubmission.contestQuestionId) {
+            const question = contest.questions.find(
+              (item): item is CodingContestQuestion =>
+                item.id === finalizedSubmission.contestQuestionId && item.type === "Coding",
+            );
+
+            if (question) {
+              const fullPass =
+                finalizedSubmission.totalCount > 0 &&
+                finalizedSubmission.passedCount >= finalizedSubmission.totalCount &&
+                finalizedSubmission.status === "ACCEPTED";
+              const awardedPoints = computeContestCodingAwardedPoints(
+                question,
+                finalizedSubmission.passedCount,
+                finalizedSubmission.totalCount,
+              );
+              const solvedAt = fullPass ? finalizedSubmission.judgedAt ?? dependencies.now() : null;
+              const nextQuestionStates = attempt.questionStates.map((state) =>
+                state.questionId === question.id
+                  ? {
+                      ...state,
+                      status: (fullPass ? "SOLVED" : "ATTEMPTED") as ContestAttemptRecord["questionStates"][number]["status"],
+                      awardedPoints,
+                      passedCount: finalizedSubmission.passedCount,
+                      totalCount: finalizedSubmission.totalCount,
+                      hasFinalCodingSubmission: true,
+                      lastSubmissionId: finalizedSubmission.id,
+                      finalSubmissionLanguage: finalizedSubmission.language,
+                      finalSubmissionStatus: finalizedSubmission.status,
+                      finalRuntimeMs: finalizedSubmission.runtimeMs,
+                      finalMemoryKb: finalizedSubmission.memoryKb,
+                      solvedAt,
+                    }
+                  : state,
+              );
+
+              const nextAttempt = withDerivedContestAttemptFields({
+                ...attempt,
+                questionStates: nextQuestionStates,
+                lastSolvedAt: solvedAt ?? attempt.lastSolvedAt,
+                updatedAt: dependencies.now(),
+              });
+              await dependencies.contestAttemptRepository.save(nextAttempt);
+            }
+          }
+        }
+
         const user = await dependencies.userRepository.getByEmail(finalizedSubmission.userEmail);
         return toSubmissionResponse(finalizedSubmission, true, {
           name: user?.name ?? null,
@@ -542,6 +682,10 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
     async listSubmissions(user, query) {
       const filters: SubmissionListFilters = {
         problemId: query.problemId,
+        contestId: query.contestId,
+        sourceType: query.sourceType,
+        userDepartment: user.role === "FACULTY" ? query.studentDepartment : undefined,
+        resourceOwnerEmail: user.role === "FACULTY" ? user.email : undefined,
         status: query.status,
         language: query.language,
         userEmail: user.role === "FACULTY" ? query.userEmail : user.email,
@@ -563,6 +707,10 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       const submission = await dependencies.submissionRepository.getById(submissionId);
       if (!submission) {
         throw new AppError(404, "Submission not found");
+      }
+
+      if (user.role === "FACULTY" && submission.resourceOwnerEmail !== user.email) {
+        throw new AppError(403, "You are not allowed to view this submission");
       }
 
       if (user.role !== "FACULTY" && submission.userEmail !== user.email) {

@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "../../shared/errors/app-error";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { AuthenticatedUser } from "../../shared/types/auth";
-import type { Difficulty, ProblemLifecycleState, StudentProblemStatus } from "../../shared/types/domain";
+import type {
+  Department,
+  Difficulty,
+  ProblemLifecycleState,
+  StudentProblemStatus,
+} from "../../shared/types/domain";
 import type { SubmissionRecord } from "../submission/submission.model";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import {
@@ -25,11 +30,11 @@ export interface ProblemService {
     query: StudentProblemQuery,
   ): Promise<PaginatedResult<StudentProblemSummaryResponse>>;
   getStudentProblemDetail(user: AuthenticatedUser, problemId: string): Promise<StudentProblemDetailResponse>;
-  listManageProblems(query: ManageProblemQuery): Promise<PaginatedResult<ManageProblemSummaryResponse>>;
-  getManageProblemDetail(problemId: string): Promise<ManageProblemDetailResponse>;
+  listManageProblems(user: AuthenticatedUser, query: ManageProblemQuery): Promise<PaginatedResult<ManageProblemSummaryResponse>>;
+  getManageProblemDetail(user: AuthenticatedUser, problemId: string): Promise<ManageProblemDetailResponse>;
   createProblem(user: AuthenticatedUser, payload: CanonicalProblemPayload): Promise<ManageProblemDetailResponse>;
-  updateProblem(problemId: string, payload: CanonicalProblemUpdatePayload): Promise<ManageProblemDetailResponse>;
-  updateProblemState(problemId: string, lifecycleState: ProblemLifecycleState): Promise<ManageProblemDetailResponse>;
+  updateProblem(user: AuthenticatedUser, problemId: string, payload: CanonicalProblemUpdatePayload): Promise<ManageProblemDetailResponse>;
+  updateProblemState(user: AuthenticatedUser, problemId: string, lifecycleState: ProblemLifecycleState): Promise<ManageProblemDetailResponse>;
 }
 
 interface ProblemServiceDependencies {
@@ -46,6 +51,7 @@ export interface StudentProblemQuery extends PaginationInput {
 
 export interface ManageProblemQuery extends StudentProblemQuery {
   lifecycleState?: ProblemLifecycleState;
+  targetDepartment?: Department;
 }
 
 function matchesSearch(problem: ProblemRecord, search?: string): boolean {
@@ -82,6 +88,22 @@ function sortProblemsForFaculty(left: ProblemRecord, right: ProblemRecord): numb
   return right.updatedAt.getTime() - left.updatedAt.getTime() || left.title.localeCompare(right.title);
 }
 
+function canStudentAccessProblem(user: AuthenticatedUser, problem: ProblemRecord): boolean {
+  return !problem.targetDepartment || problem.targetDepartment === user.department;
+}
+
+function ensureFacultyOwnsProblem(user: AuthenticatedUser, problem: ProblemRecord | null): ProblemRecord {
+  if (!problem) {
+    throw new AppError(404, "Problem not found");
+  }
+
+  if (problem.createdBy !== user.email) {
+    throw new AppError(404, "Problem not found");
+  }
+
+  return problem;
+}
+
 export function createProblemService(dependencies: ProblemServiceDependencies): ProblemService {
   return {
     async listStudentProblems(user, query) {
@@ -92,6 +114,7 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
 
       const filtered = problems
         .filter((problem) => problem.lifecycleState === "Published")
+        .filter((problem) => canStudentAccessProblem(user, problem))
         .filter((problem) => (query.difficulty ? problem.difficulty === query.difficulty : true))
         .filter((problem) => (query.tag ? problem.tags.includes(query.tag) : true))
         .filter((problem) => matchesSearch(problem, query.search))
@@ -107,18 +130,20 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         dependencies.submissionRepository.list({ userEmail: user.email }),
       ]);
 
-      if (!problem || problem.lifecycleState !== "Published") {
+      if (!problem || problem.lifecycleState !== "Published" || !canStudentAccessProblem(user, problem)) {
         throw new AppError(404, "Problem not found");
       }
 
       return toStudentProblemDetail(problem, getStudentProblemStatus(submissions, problem.id));
     },
 
-    async listManageProblems(query) {
+    async listManageProblems(user, query) {
       const problems = (await dependencies.problemRepository.list())
+        .filter((problem) => problem.createdBy === user.email)
         .filter((problem) => (!query.lifecycleState ? true : problem.lifecycleState === query.lifecycleState))
         .filter((problem) => (query.difficulty ? problem.difficulty === query.difficulty : true))
         .filter((problem) => (query.tag ? problem.tags.includes(query.tag) : true))
+        .filter((problem) => (query.targetDepartment !== undefined ? problem.targetDepartment === query.targetDepartment : true))
         .filter((problem) => matchesSearch(problem, query.search))
         .sort(sortProblemsForFaculty)
         .map(toManageProblemSummary);
@@ -126,11 +151,8 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       return paginateArray(problems, query);
     },
 
-    async getManageProblemDetail(problemId) {
-      const problem = await dependencies.problemRepository.getById(problemId);
-      if (!problem) {
-        throw new AppError(404, "Problem not found");
-      }
+    async getManageProblemDetail(user, problemId) {
+      const problem = ensureFacultyOwnsProblem(user, await dependencies.problemRepository.getById(problemId));
 
       return toManageProblemDetail(problem);
     },
@@ -149,6 +171,7 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         timeLimitSeconds: payload.timeLimitSeconds,
         memoryLimitMb: payload.memoryLimitMb,
         lifecycleState: payload.lifecycleState,
+        targetDepartment: payload.targetDepartment,
         createdBy: user.email,
         createdByRole: user.role,
         totalSubmissions: 0,
@@ -164,11 +187,8 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       return toManageProblemDetail(problem);
     },
 
-    async updateProblem(problemId, payload) {
-      const existingProblem = await dependencies.problemRepository.getById(problemId);
-      if (!existingProblem) {
-        throw new AppError(404, "Problem not found");
-      }
+    async updateProblem(user, problemId, payload) {
+      const existingProblem = ensureFacultyOwnsProblem(user, await dependencies.problemRepository.getById(problemId));
 
       const updatedProblem: ProblemRecord = {
         ...existingProblem,
@@ -180,11 +200,8 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       return toManageProblemDetail(updatedProblem);
     },
 
-    async updateProblemState(problemId, lifecycleState) {
-      const existingProblem = await dependencies.problemRepository.getById(problemId);
-      if (!existingProblem) {
-        throw new AppError(404, "Problem not found");
-      }
+    async updateProblemState(user, problemId, lifecycleState) {
+      const existingProblem = ensureFacultyOwnsProblem(user, await dependencies.problemRepository.getById(problemId));
 
       const updatedProblem: ProblemRecord = {
         ...existingProblem,

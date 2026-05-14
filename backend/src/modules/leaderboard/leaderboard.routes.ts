@@ -9,6 +9,7 @@ export function createLeaderboardRouter(dependencies: ApplicationDependencies): 
   const controller = createLeaderboardController(dependencies.leaderboardService);
 
   router.use(dependencies.authMiddleware);
+  router.use(dependencies.profileCompletionMiddleware);
   router.get("/", asyncHandler(controller.listLeaderboard));
   router.get("/export", requireRole("FACULTY"), asyncHandler(controller.exportLeaderboard));
 

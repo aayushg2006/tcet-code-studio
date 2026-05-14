@@ -50,7 +50,10 @@ export default function StudentDashboard() {
 
   const user = userQuery.data?.user;
   const recentSubmissions = useMemo(
-    () => [...(submissionsQuery.data?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    () =>
+      [...(submissionsQuery.data?.items ?? [])]
+        .filter((submission) => submission.sourceType === "problem")
+        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [submissionsQuery.data?.items],
   );
   const recommendedProblems = useMemo(

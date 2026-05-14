@@ -5,6 +5,7 @@ import { db } from "../firebase";
 import type { UserRecord } from "../modules/user/user.model";
 import { FirestoreUserRepository } from "../modules/user/user.repository";
 import type { AuthenticatedUser, UserRole } from "../shared/types/auth";
+import { normalizeDepartment } from "../shared/utils/normalize";
 
 type JwtPayload = {
   email?: string;
@@ -114,7 +115,7 @@ function buildJwtUser(payload: JwtPayload): AuthenticatedUser {
     role: role as UserRole,
     name: payload.name,
     uid: payload.uid,
-    department: payload.department,
+    department: normalizeDepartment(payload.department) ?? undefined,
     status: payload.status?.trim().toUpperCase() ?? "ACTIVE",
   };
 }
@@ -126,8 +127,9 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     name: authUser.name ?? null,
     uid: authUser.uid ?? null,
     isProfileComplete: false,
+    designation: null,
     rollNumber: null,
-    department: authUser.department ?? null,
+    department: normalizeDepartment(authUser.department) ?? null,
     semester: null,
     linkedInUrl: null,
     githubUrl: null,

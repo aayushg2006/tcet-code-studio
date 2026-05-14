@@ -1,5 +1,6 @@
 import { toIsoString } from "../../shared/utils/date";
 import type { UserRole } from "../../shared/types/auth";
+import type { Department } from "../../shared/types/domain";
 import type { UserRecord } from "../user/user.model";
 
 export interface LeaderboardEntry {
@@ -7,6 +8,7 @@ export interface LeaderboardEntry {
   role: UserRole;
   name: string | null;
   uid: string | null;
+  department: Department | null;
   rating: number;
   score: number;
   problemsSolved: number;
@@ -24,6 +26,7 @@ export interface LeaderboardListItem {
   role: UserRole;
   name: string | null;
   uid: string | null;
+  department: Department | null;
   rating: number;
   score: number;
   problemsSolved: number;
@@ -40,6 +43,7 @@ export function buildLeaderboardEntryFromUser(user: UserRecord): LeaderboardEntr
     role: user.role,
     name: user.name,
     uid: user.uid,
+    department: user.department,
     rating: user.rating,
     score: user.rating,
     problemsSolved: user.problemsSolved,
@@ -52,8 +56,10 @@ export function buildLeaderboardEntryFromUser(user: UserRecord): LeaderboardEntr
   };
 }
 
-export function isRankedLeaderboardEntry(entry: Pick<LeaderboardEntry, "role">): boolean {
-  return entry.role === "STUDENT";
+export function isRankedLeaderboardEntry(entry: Pick<LeaderboardEntry, "role" | "department" | "name" | "uid"> & {
+  isProfileComplete?: boolean;
+}): boolean {
+  return entry.role === "STUDENT" && entry.isProfileComplete !== false;
 }
 
 export function compareLeaderboardEntries(left: LeaderboardEntry, right: LeaderboardEntry): number {
@@ -79,6 +85,7 @@ export function toLeaderboardListItem(entry: LeaderboardEntry, rank: number): Le
     role: entry.role,
     name: entry.name,
     uid: entry.uid,
+    department: entry.department,
     rating: entry.rating,
     score: entry.rating,
     problemsSolved: entry.problemsSolved,

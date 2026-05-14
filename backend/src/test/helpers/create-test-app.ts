@@ -1,5 +1,6 @@
 import { createApp } from "../../app";
-import { authMiddleware } from "../../middleware/auth";
+import { createRequireCompleteProfile } from "../../middleware/require-complete-profile";
+import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
 import { createProblemService } from "../../modules/problem/problem.service";
 import { createSubmissionService } from "../../modules/submission/submission.service";
@@ -8,6 +9,9 @@ import { createUserService } from "../../modules/user/user.service";
 import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import {
+  InMemoryContestAttemptRepository,
+  InMemoryContestProctoringRepository,
+  InMemoryContestRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
   InMemorySubmissionRepository,
@@ -15,10 +19,87 @@ import {
 } from "./in-memory-repositories";
 
 export function createTestApp() {
-  const userRepository = new InMemoryUserRepository();
+  const seedTime = new Date(Date.UTC(2026, 4, 7, 0, 0, 0));
+  const userRepository = new InMemoryUserRepository([
+    {
+      email: "student1@tcetmumbai.in",
+      role: "STUDENT",
+      name: "Student One",
+      uid: "TCET-MOCK-001",
+      isProfileComplete: true,
+      designation: null,
+      rollNumber: "TCET001",
+      department: "B.E. Computer Engineering",
+      semester: 4,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+    {
+      email: "student2@tcetmumbai.in",
+      role: "STUDENT",
+      name: "Student Two",
+      uid: "TCET-MOCK-002",
+      isProfileComplete: true,
+      designation: null,
+      rollNumber: "TCET002",
+      department: "B.E. Information Technology",
+      semester: 4,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+    {
+      email: "faculty1@tcetmumbai.in",
+      role: "FACULTY",
+      name: "Prof. Mehta",
+      uid: "TCET-MOCK-F001",
+      isProfileComplete: true,
+      designation: "Professor",
+      rollNumber: null,
+      department: "B.E. Computer Engineering",
+      semester: null,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+  ]);
   const problemRepository = new InMemoryProblemRepository();
   const submissionRepository = new InMemorySubmissionRepository();
   const leaderboardRepository = new InMemoryLeaderboardRepository();
+  const contestRepository = new InMemoryContestRepository();
+  const contestAttemptRepository = new InMemoryContestAttemptRepository();
+  const contestProctoringRepository = new InMemoryContestProctoringRepository();
   let tick = 0;
 
   const now = () => {
@@ -31,11 +112,34 @@ export function createTestApp() {
     },
   };
 
+  const mockAuthMiddleware: ApplicationDependencies["authMiddleware"] = (req, _res, next) => {
+    req.user = {
+      email:
+        typeof req.headers["x-mock-email"] === "string"
+          ? req.headers["x-mock-email"]
+          : "student1@tcetmumbai.in",
+      role:
+        typeof req.headers["x-mock-role"] === "string" && req.headers["x-mock-role"].toUpperCase() === "FACULTY"
+          ? "FACULTY"
+          : "STUDENT",
+      name: typeof req.headers["x-mock-name"] === "string" ? req.headers["x-mock-name"] : "Student One",
+      uid: typeof req.headers["x-mock-uid"] === "string" ? req.headers["x-mock-uid"] : "TCET-MOCK-001",
+      department:
+        typeof req.headers["x-mock-department"] === "string"
+          ? req.headers["x-mock-department"]
+          : "B.E. Computer Engineering",
+      status: "ACTIVE",
+    };
+    next();
+  };
+
   const dependencies: ApplicationDependencies = {
-    authMiddleware,
+    authMiddleware: mockAuthMiddleware,
+    profileCompletionMiddleware: createRequireCompleteProfile(userRepository),
     userService: createUserService({
       userRepository,
       leaderboardRepository,
+      submissionRepository,
       now,
     }),
     problemService: createProblemService({
@@ -45,6 +149,8 @@ export function createTestApp() {
     }),
     submissionService: createSubmissionService({
       problemRepository,
+      contestRepository,
+      contestAttemptRepository,
       submissionRepository,
       userRepository,
       leaderboardRepository,
@@ -55,6 +161,16 @@ export function createTestApp() {
     leaderboardService: createLeaderboardService({
       leaderboardRepository,
     }),
+    contestService: createContestService({
+      contestRepository,
+      contestAttemptRepository,
+      contestProctoringRepository,
+      submissionRepository,
+      submissionQueue,
+      userRepository,
+      executionProvider: new StubExecutionProvider(),
+      now,
+    }),
   };
 
   return {
@@ -64,12 +180,16 @@ export function createTestApp() {
       problemRepository,
       submissionRepository,
       leaderboardRepository,
+      contestRepository,
+      contestAttemptRepository,
+      contestProctoringRepository,
     },
     services: {
       userService: dependencies.userService,
       problemService: dependencies.problemService,
       submissionService: dependencies.submissionService,
       leaderboardService: dependencies.leaderboardService,
+      contestService: dependencies.contestService,
     },
   };
 }

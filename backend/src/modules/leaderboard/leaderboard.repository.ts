@@ -1,11 +1,12 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { toDate } from "../../shared/utils/date";
-import { normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
+import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { LeaderboardEntry } from "./leaderboard.model";
 
 export interface LeaderboardRepository {
   getByEmail(email: string): Promise<LeaderboardEntry | null>;
   save(entry: LeaderboardEntry): Promise<LeaderboardEntry>;
+  delete(email: string): Promise<void>;
   list(): Promise<LeaderboardEntry[]>;
 }
 
@@ -19,6 +20,7 @@ function mapLeaderboardEntry(email: string, data: Record<string, unknown>): Lead
     role: normalizeRole(data.role),
     name: typeof data.name === "string" ? data.name : null,
     uid: typeof data.uid === "string" ? data.uid : null,
+    department: normalizeDepartment(data.department),
     rating,
     score: rating,
     problemsSolved: normalizeNumber(data.problemsSolved, 0),
@@ -52,6 +54,10 @@ export class FirestoreLeaderboardRepository implements LeaderboardRepository {
       { merge: true },
     );
     return entry;
+  }
+
+  async delete(email: string): Promise<void> {
+    await this.firestore.collection("leaderboard").doc(email).delete();
   }
 
   async list(): Promise<LeaderboardEntry[]> {

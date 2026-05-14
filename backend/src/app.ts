@@ -6,6 +6,7 @@ import { env } from "./config/env";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
+import { createContestRouter } from "./modules/contest/contest.routes";
 import { createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
@@ -116,6 +117,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/users", createUserRouter(dependencies));
   app.use("/api/user", createLegacyUserRouter(dependencies));
   app.use("/api/problems", createProblemRouter(dependencies));
+  app.use("/api/contests", createContestRouter(dependencies));
   app.use("/api/submissions", createSubmissionRouter(dependencies));
   app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
 

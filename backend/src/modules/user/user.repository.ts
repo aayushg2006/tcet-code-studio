@@ -1,6 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { toDate } from "../../shared/utils/date";
-import { normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
+import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { UserRecord } from "./user.model";
 
 export interface UserRepository {
@@ -23,8 +23,9 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
     name: typeof data.name === "string" ? data.name : null,
     uid: typeof data.uid === "string" ? data.uid : null,
     isProfileComplete: Boolean(data.isProfileComplete),
+    designation: typeof data.designation === "string" ? data.designation : null,
     rollNumber: typeof data.rollNumber === "string" ? data.rollNumber : null,
-    department: typeof data.department === "string" ? data.department : null,
+    department: normalizeDepartment(data.department),
     semester: typeof data.semester === "number" ? data.semester : null,
     linkedInUrl: typeof data.linkedInUrl === "string" ? data.linkedInUrl : null,
     githubUrl: typeof data.githubUrl === "string" ? data.githubUrl : null,

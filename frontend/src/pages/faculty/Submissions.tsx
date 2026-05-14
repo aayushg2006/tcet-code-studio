@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { submissionsApi } from "@/api/services";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
-import type { SubmissionStatus, SupportedLanguage } from "@/api/types";
+import { DEPARTMENTS, type Department, type SubmissionStatus, type SupportedLanguage } from "@/api/types";
 
 function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
@@ -21,15 +21,18 @@ export default function FacultySubmissions() {
   const [problemFilter, setProblemFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | "All">("All");
   const [languageFilter, setLanguageFilter] = useState<SupportedLanguage | "All">("All");
+  const [departmentFilter, setDepartmentFilter] = useState<Department | "All">("All");
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-submissions", problemFilter, statusFilter, languageFilter],
+    queryKey: ["faculty-submissions", problemFilter, statusFilter, languageFilter, departmentFilter],
     queryFn: () =>
       submissionsApi.list(
         {
           pageSize: 100,
+          sourceType: "problem",
           problemId: problemFilter === "All" ? undefined : problemFilter,
+          studentDepartment: departmentFilter === "All" ? undefined : departmentFilter,
           status: statusFilter === "All" ? undefined : statusFilter,
           language: languageFilter === "All" ? undefined : languageFilter,
         },
@@ -78,6 +81,18 @@ export default function FacultySubmissions() {
             {problems.map((problem) => (
               <option key={problem.id} value={problem.id}>
                 {problem.title}
+              </option>
+            ))}
+          </select>
+          <select
+            value={departmentFilter}
+            onChange={(event) => setDepartmentFilter(event.target.value as Department | "All")}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option>All</option>
+            {DEPARTMENTS.map((department) => (
+              <option key={department} value={department}>
+                {department}
               </option>
             ))}
           </select>

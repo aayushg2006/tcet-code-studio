@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
-import { leaderboardApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import { problemsApi, submissionsApi, userApi } from "@/api/services";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toStatusLabel } from "@/api/mappers";
 
@@ -26,6 +26,7 @@ function formatTime(isoDate: string): string {
 const actions = [
   { to: "/faculty/create-problem", label: "Create Problem", icon: FilePlus2, primary: true },
   { to: "/faculty/create-contest", label: "Create Contest", icon: Trophy },
+  { to: "/faculty/contests", label: "View Contests", icon: Trophy },
   { to: "/faculty/problems", label: "Manage Problems", icon: ListChecks },
   { to: "/faculty/submissions", label: "View Submissions", icon: FileCode2 },
   { to: "/faculty/leaderboard", label: "View Leaderboard", icon: Trophy },
@@ -47,32 +48,100 @@ export default function FacultyDashboard() {
     queryFn: () => submissionsApi.list({ pageSize: 50 }, "/faculty/dashboard"),
   });
 
-  const leaderboardQuery = useQuery({
-    queryKey: ["faculty-dashboard", "leaderboard"],
-    queryFn: () => leaderboardApi.list({ pageSize: 50 }, "/faculty/dashboard"),
-  });
-
   const recentSubmissions = useMemo(
-    () => [...(submissionsQuery.data?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 6),
+    () =>
+      [...(submissionsQuery.data?.items ?? [])]
+        .filter((submission) => submission.sourceType === "problem")
+        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+        .slice(0, 6),
     [submissionsQuery.data?.items],
   );
-  const topStudents = leaderboardQuery.data?.items.slice(0, 5) ?? [];
 
   const facultyName = userQuery.data?.user.name ?? "Faculty";
   const problemList = problemsQuery.data?.items ?? [];
-  const submissionList = submissionsQuery.data?.items ?? [];
-  const activeStudents = leaderboardQuery.data?.pageInfo.totalCount ?? new Set(submissionList.map((submission) => submission.userEmail)).size;
-  const avgAccuracy = safeAverage((leaderboardQuery.data?.items ?? []).map((entry) => entry.accuracy));
+  const submissionList = useMemo(
+    () => (submissionsQuery.data?.items ?? []).filter((submission) => submission.sourceType === "problem"),
+    [submissionsQuery.data?.items],
+  );
+  const activeStudents = new Set(submissionList.map((submission) => submission.userEmail)).size;
+  const topStudents = useMemo(() => {
+    const byStudent = new Map<
+      string,
+      {
+        email: string;
+        name: string | null;
+        uid: string | null;
+        score: number;
+        solved: Set<string>;
+        accepted: number;
+        total: number;
+      }
+    >();
+
+    submissionList.forEach((submission) => {
+      const existing =
+        byStudent.get(submission.userEmail) ??
+        {
+          email: submission.userEmail,
+          name: submission.userName,
+          uid: submission.userUid,
+          score: 0,
+          solved: new Set<string>(),
+          accepted: 0,
+          total: 0,
+        };
+
+      existing.total += 1;
+      if (submission.status === "ACCEPTED") {
+        existing.accepted += 1;
+        if (!existing.solved.has(submission.problemId)) {
+          existing.solved.add(submission.problemId);
+          existing.score += submission.ratingAwarded || 0;
+        }
+      }
+
+      byStudent.set(submission.userEmail, existing);
+    });
+
+    return Array.from(byStudent.values())
+      .map((entry) => ({
+        ...entry,
+        accuracy: entry.total === 0 ? 0 : Math.round((entry.accepted / entry.total) * 10000) / 100,
+        problemsSolved: entry.solved.size,
+      }))
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        if (right.problemsSolved !== left.problemsSolved) return right.problemsSolved - left.problemsSolved;
+        if (right.accuracy !== left.accuracy) return right.accuracy - left.accuracy;
+        return left.email.localeCompare(right.email);
+      })
+      .slice(0, 5);
+  }, [submissionList]);
+  const avgAccuracy = safeAverage(
+    topStudents.length > 0
+      ? topStudents.map((entry) => entry.accuracy)
+      : Array.from(
+          submissionList.reduce((map, submission) => {
+            const current = map.get(submission.userEmail) ?? { accepted: 0, total: 0 };
+            current.total += 1;
+            if (submission.status === "ACCEPTED") {
+              current.accepted += 1;
+            }
+            map.set(submission.userEmail, current);
+            return map;
+          }, new Map<string, { accepted: number; total: number }>()),
+        ).map(([, value]) => (value.total === 0 ? 0 : Math.round((value.accepted / value.total) * 10000) / 100)),
+  );
 
   const stats = [
     { label: "Problems Created", value: String(problemsQuery.data?.pageInfo.totalCount ?? problemList.length), icon: BookOpen },
-    { label: "Total Submissions", value: (submissionsQuery.data?.pageInfo.totalCount ?? submissionList.length).toLocaleString(), icon: Activity },
+    { label: "Total Submissions", value: submissionList.length.toLocaleString(), icon: Activity },
     { label: "Active Students", value: String(activeStudents), icon: Users },
     { label: "Avg. Accuracy", value: `${avgAccuracy}%`, icon: Target },
   ];
 
-  const loading = userQuery.isLoading || problemsQuery.isLoading || submissionsQuery.isLoading || leaderboardQuery.isLoading;
-  const error = userQuery.error || problemsQuery.error || submissionsQuery.error || leaderboardQuery.error;
+  const loading = userQuery.isLoading || problemsQuery.isLoading || submissionsQuery.isLoading;
+  const error = userQuery.error || problemsQuery.error || submissionsQuery.error;
 
   return (
     <AppLayout>
@@ -174,9 +243,9 @@ export default function FacultyDashboard() {
                   </Link>
                 </div>
                 <ol className="space-y-3">
-                  {topStudents.map((student) => (
-                    <li key={student.rank} className="flex items-center gap-3">
-                      <span className="w-6 font-display font-bold text-accent">#{student.rank}</span>
+                  {topStudents.map((student, index) => (
+                    <li key={student.email} className="flex items-center gap-3">
+                      <span className="w-6 font-display font-bold text-accent">#{index + 1}</span>
                       <div className="flex-1">
                         <Link to={toFacultyStudentProfilePath(student.email)} className="block hover:text-accent">
                           <div className="text-sm font-medium">{student.name ?? student.email}</div>

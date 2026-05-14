@@ -3,6 +3,16 @@ import { env } from "../config/env";
 import { db } from "../firebase";
 import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
 import { authMiddleware } from "../middleware/auth";
+import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
+import {
+  FirestoreContestAttemptRepository,
+  FirestoreContestProctoringRepository,
+  FirestoreContestRepository,
+  type ContestAttemptRepository,
+  type ContestProctoringRepository,
+  type ContestRepository,
+} from "../modules/contest/contest.repository";
+import { createContestService, type ContestService } from "../modules/contest/contest.service";
 import {
   FirestoreLeaderboardRepository,
   type LeaderboardRepository,
@@ -28,6 +38,9 @@ export interface RepositoryBundle {
   problemRepository: ProblemRepository;
   submissionRepository: SubmissionRepository;
   leaderboardRepository: LeaderboardRepository;
+  contestRepository: ContestRepository;
+  contestAttemptRepository: ContestAttemptRepository;
+  contestProctoringRepository: ContestProctoringRepository;
 }
 
 export interface ServiceBundle {
@@ -35,10 +48,12 @@ export interface ServiceBundle {
   problemService: ProblemService;
   submissionService: SubmissionService;
   leaderboardService: LeaderboardService;
+  contestService: ContestService;
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
   authMiddleware: RequestHandler;
+  profileCompletionMiddleware: RequestHandler;
   databaseHealthcheck?: () => Promise<void>;
 }
 
@@ -56,6 +71,11 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
     problemRepository: overrides?.problemRepository ?? new FirestoreProblemRepository(db),
     submissionRepository: overrides?.submissionRepository ?? new FirestoreSubmissionRepository(db),
     leaderboardRepository: overrides?.leaderboardRepository ?? new FirestoreLeaderboardRepository(db),
+    contestRepository: overrides?.contestRepository ?? new FirestoreContestRepository(db),
+    contestAttemptRepository:
+      overrides?.contestAttemptRepository ?? new FirestoreContestAttemptRepository(db),
+    contestProctoringRepository:
+      overrides?.contestProctoringRepository ?? new FirestoreContestProctoringRepository(db),
   };
 }
 
@@ -66,6 +86,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const userService = createUserService({
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
+    submissionRepository: repositories.submissionRepository,
     now,
   });
 
@@ -77,6 +98,8 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
 
   const submissionService = createSubmissionService({
     problemRepository: repositories.problemRepository,
+    contestRepository: repositories.contestRepository,
+    contestAttemptRepository: repositories.contestAttemptRepository,
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
@@ -89,8 +112,20 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     leaderboardRepository: repositories.leaderboardRepository,
   });
 
+  const contestService = createContestService({
+    contestRepository: repositories.contestRepository,
+    contestAttemptRepository: repositories.contestAttemptRepository,
+    contestProctoringRepository: repositories.contestProctoringRepository,
+    submissionRepository: repositories.submissionRepository,
+    submissionQueue: overrides.submissionQueue ?? new BullMQSubmissionQueue(),
+    userRepository: repositories.userRepository,
+    executionProvider: overrides.executionProvider ?? new Judge0ExecutionProvider(),
+    now,
+  });
+
   return {
     authMiddleware: overrides.authMiddleware ?? authMiddleware,
+    profileCompletionMiddleware: createRequireCompleteProfile(repositories.userRepository),
     databaseHealthcheck: async () => {
       await db.collection(env.FIRESTORE_TEST_COLLECTION).doc("demo").set({
         message: "Firebase connected",
@@ -101,5 +136,6 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     problemService,
     submissionService,
     leaderboardService,
+    contestService,
   };
 }

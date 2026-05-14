@@ -1,6 +1,21 @@
 import { apiRequest } from "@/api/client";
 import type {
   CompleteProfilePayload,
+  ContestAnswerPayload,
+  ContestAttemptEnvelope,
+  ContestCodingSubmissionPayload,
+  ContestCodingSubmissionReceipt,
+  ContestEnvelope,
+  ContestLifecycleState,
+  ContestListItem,
+  ContestAttemptsEnvelope,
+  FacultyContestAttemptReviewEnvelope,
+  ContestProctoringPayload,
+  ContestResultsVisibilityPayload,
+  ContestStandingsEnvelope,
+  CreateContestPayload,
+  Department,
+  FacultyContestDetail,
   LeaderboardItem,
   ManageProblemDetail,
   ManageProblemSummary,
@@ -10,15 +25,20 @@ import type {
   ProblemUpdatePayload,
   ProblemWritePayload,
   RunResultEnvelope,
+  StudentContestDetail,
   StudentProblemDetail,
   StudentProblemSummary,
   Submission,
   SubmissionEnvelope,
   SubmissionQueueReceipt,
   SubmissionStatus,
+  SubmissionSourceType,
   SubmissionWritePayload,
   SupportedLanguage,
+  StudentContestQuestionEnvelope,
   UserEnvelope,
+  UserProfileAnalyticsEnvelope,
+  UpdateContestPayload,
 } from "@/api/types";
 
 export type PaginationQuery = {
@@ -34,11 +54,15 @@ export type StudentProblemsQuery = PaginationQuery & {
 
 export type ManageProblemsQuery = StudentProblemsQuery & {
   lifecycleState?: ProblemLifecycleState;
+  targetDepartment?: Department;
 };
 
 export type SubmissionsQuery = PaginationQuery & {
   problemId?: string;
+  contestId?: string;
+  sourceType?: SubmissionSourceType;
   userEmail?: string;
+  studentDepartment?: Department;
   status?: SubmissionStatus;
   language?: SupportedLanguage;
 };
@@ -57,6 +81,10 @@ export const userApi = {
     }),
   getByEmail: (email: string, pathname?: string) =>
     apiRequest<UserEnvelope>(`/api/users/${encodeURIComponent(email)}`, { pathname }),
+  getAnalytics: (pathname?: string) =>
+    apiRequest<UserProfileAnalyticsEnvelope>("/api/users/me/analytics", { pathname }),
+  getAnalyticsByEmail: (email: string, pathname?: string) =>
+    apiRequest<UserProfileAnalyticsEnvelope>(`/api/users/${encodeURIComponent(email)}/analytics`, { pathname }),
 };
 
 export const problemsApi = {
@@ -113,14 +141,100 @@ export const submissionsApi = {
 };
 
 export const leaderboardApi = {
-  list: (query: PaginationQuery = {}, pathname?: string) =>
+  list: (query: PaginationQuery & { department?: Department } = {}, pathname?: string) =>
     apiRequest<PaginatedResponse<LeaderboardItem>>("/api/leaderboard", {
       query,
       pathname,
     }),
-  exportCsv: (pathname?: string) =>
+  exportCsv: (pathname?: string, query?: { department?: Department }) =>
     apiRequest<string>("/api/leaderboard/export", {
+      query,
       pathname,
       responseType: "text",
+    }),
+};
+
+export const contestsApi = {
+  list: (query: PaginationQuery & { department?: Department } = {}, pathname?: string) =>
+    apiRequest<PaginatedResponse<ContestListItem>>("/api/contests", {
+      query,
+      pathname,
+    }),
+  getStudentDetail: (contestId: string, pathname?: string) =>
+    apiRequest<ContestEnvelope<StudentContestDetail>>(`/api/contests/${contestId}`, { pathname }),
+  getFacultyDetail: (contestId: string, pathname?: string) =>
+    apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}`, { pathname }),
+  create: (payload: CreateContestPayload, pathname?: string) =>
+    apiRequest<ContestEnvelope<FacultyContestDetail>>("/api/contests", {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  update: (contestId: string, payload: UpdateContestPayload, pathname?: string) =>
+    apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  updateState: (contestId: string, lifecycleState: ContestLifecycleState, pathname?: string) =>
+    apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}/state`, {
+      method: "PATCH",
+      body: { lifecycleState },
+      pathname,
+    }),
+  updateResultsVisibility: (contestId: string, payload: ContestResultsVisibilityPayload, pathname?: string) =>
+    apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}/results`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  startAttempt: (contestId: string, pathname?: string) =>
+    apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/attempts`, {
+      method: "POST",
+      pathname,
+    }),
+  submitAttempt: (contestId: string, pathname?: string) =>
+    apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/attempts/submit`, {
+      method: "POST",
+      pathname,
+    }),
+  answerQuestion: (contestId: string, payload: ContestAnswerPayload, pathname?: string) =>
+    apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/answers`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  getQuestionDetail: (contestId: string, questionId: string, pathname?: string) =>
+    apiRequest<StudentContestQuestionEnvelope>(`/api/contests/${contestId}/questions/${questionId}`, { pathname }),
+  runCodingQuestion: (contestId: string, payload: ContestCodingSubmissionPayload, pathname?: string) =>
+    apiRequest<RunResultEnvelope>(`/api/contests/${contestId}/coding-run`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  submitCodingQuestion: (contestId: string, payload: ContestCodingSubmissionPayload, pathname?: string) =>
+    apiRequest<ContestCodingSubmissionReceipt>(`/api/contests/${contestId}/coding-submissions`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  recordProctorEvent: (contestId: string, payload: ContestProctoringPayload, pathname?: string) =>
+    apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/proctor-events`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  listAttempts: (contestId: string, pathname?: string) =>
+    apiRequest<ContestAttemptsEnvelope>(`/api/contests/${contestId}/attempts`, { pathname }),
+  getStandings: (contestId: string, pathname?: string) =>
+    apiRequest<ContestStandingsEnvelope>(`/api/contests/${contestId}/standings`, { pathname }),
+  exportStandingsCsv: (contestId: string, pathname?: string) =>
+    apiRequest<string>(`/api/contests/${contestId}/standings/export`, {
+      pathname,
+      responseType: "text",
+    }),
+  getAttemptReview: (contestId: string, attemptId: string, pathname?: string) =>
+    apiRequest<FacultyContestAttemptReviewEnvelope>(`/api/contests/${contestId}/attempts/${attemptId}`, {
+      pathname,
     }),
 };

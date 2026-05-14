@@ -1,18 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Trophy, Medal, Award } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { leaderboardApi } from "@/api/services";
+import { DEPARTMENTS, type Department } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 const podiumIcons = [Trophy, Medal, Award];
 
 export default function StudentLeaderboard() {
+  const [department, setDepartment] = useState<Department | "All">("All");
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["student-leaderboard"],
-    queryFn: () => leaderboardApi.list({ pageSize: 100 }),
+    queryKey: ["student-leaderboard", department],
+    queryFn: () =>
+      leaderboardApi.list({
+        pageSize: 100,
+        department: department === "All" ? undefined : department,
+      }),
   });
 
   const leaderboard = data?.items ?? [];
@@ -25,6 +31,21 @@ export default function StudentLeaderboard() {
         <div>
           <h1 className="font-display text-3xl font-bold">Leaderboard</h1>
           <p className="mt-1 text-muted-foreground">The top minds at TCET this semester.</p>
+        </div>
+
+        <div>
+          <select
+            value={department}
+            onChange={(event) => setDepartment(event.target.value as Department | "All")}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="All">All Departments</option>
+            {DEPARTMENTS.map((entry) => (
+              <option key={entry} value={entry}>
+                {entry}
+              </option>
+            ))}
+          </select>
         </div>
 
         {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading leaderboard...</Card>}

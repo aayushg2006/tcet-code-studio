@@ -32,6 +32,51 @@ async function createProblem(app: Parameters<typeof request>[0], overrides: Reco
   return response.body.problem;
 }
 
+async function createContest(app: Parameters<typeof request>[0], overrides: Record<string, unknown> = {}) {
+  const response = await request(app)
+    .post("/api/contests")
+    .set(facultyHeaders)
+    .send({
+      title: "T&P Test",
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      type: "Rated",
+      lifecycleState: "Published",
+      targetDepartment: null,
+      maxViolations: 3,
+      questions: [
+        {
+          id: "q_mcq_1",
+          type: "MCQ",
+          points: 10,
+          statement: "Which data structure follows the LIFO principle?",
+          options: ["Queue", "Stack", "Heap", "Tree"],
+          correctAnswer: "B",
+        },
+        {
+          id: "q_code_1",
+          type: "Coding",
+          points: 100,
+          problemTitle: "Sum Two Numbers",
+          difficulty: "Easy",
+          problemStatement: "Read two integers and print their sum.",
+          constraints: "1 <= a,b <= 10^9",
+          inputFormat: "Two integers",
+          outputFormat: "Their sum",
+          sampleTestCases: [{ input: "2 3", output: "5" }],
+          hiddenTestCases: [{ input: "10 20", output: "30" }],
+          timeLimitSeconds: 1,
+          memoryLimitMb: 256,
+          supportedLanguages: ["cpp", "java", "python"],
+        },
+      ],
+      ...overrides,
+    });
+
+  expect(response.status).toBe(201);
+  return response.body.contest;
+}
+
 describe("TCET Code Studio backend APIs", () => {
   it("auto-provisions users through mock auth and preserves the legacy profile route", async () => {
     const { app } = createTestApp();
@@ -293,5 +338,128 @@ describe("TCET Code Studio backend APIs", () => {
     expect(csvExportResponse.text).toContain("student2@tcetmumbai.in");
     expect(csvExportResponse.text).not.toContain("faculty1@tcetmumbai.in");
     expect(csvExportResponse.text).toContain("rating");
+  });
+
+  it("hides contest answers and standings from students until faculty publishes results", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:00:00.000Z",
+      duration: 30,
+      lifecycleState: "Published",
+    });
+
+    const contestListResponse = await request(app).get("/api/contests");
+    expect(contestListResponse.status).toBe(200);
+    expect(contestListResponse.body.items).toHaveLength(1);
+    expect(contestListResponse.body.items[0].computedStatus).toBe("Ended");
+
+    const studentQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(studentQuestionResponse.status).toBe(200);
+    expect(studentQuestionResponse.body.question.questionNumber).toBe(1);
+    expect(studentQuestionResponse.body.question.correctAnswer).toBeUndefined();
+
+    const codingQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_code_1`);
+    expect(codingQuestionResponse.status).toBe(200);
+    expect(codingQuestionResponse.body.question.questionNumber).toBe(2);
+    expect(codingQuestionResponse.body.question.hiddenTestCases).toBeUndefined();
+
+    const hiddenStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(hiddenStandingsResponse.status).toBe(403);
+
+    const facultyStandingsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/standings`)
+      .set(facultyHeaders);
+    expect(facultyStandingsResponse.status).toBe(200);
+
+    const publishResultsResponse = await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true });
+    expect(publishResultsResponse.status).toBe(200);
+    expect(publishResultsResponse.body.contest.resultsPublished).toBe(true);
+
+    const visibleStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(visibleStandingsResponse.status).toBe(200);
+  });
+
+  it("hides upcoming contest questions from students until the contest goes live", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T01:00:00.000Z",
+      duration: 60,
+      lifecycleState: "Published",
+    });
+
+    const detailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body.contest.computedStatus).toBe("Upcoming");
+    expect(detailResponse.body.contest.questions).toEqual([]);
+
+    const questionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(questionResponse.status).toBe(403);
+
+    const attemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(attemptResponse.status).toBe(409);
+  });
+
+  it("processes live contest attempts, contest coding runs, queued contest coding submits, and auto-submits on the third proctoring violation", async () => {
+    const { app, repositories, services } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+    });
+
+    const startAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(startAttemptResponse.status).toBe(201);
+    expect(startAttemptResponse.body.attempt.status).toBe("ACTIVE");
+
+    const answerResponse = await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "B" });
+    expect(answerResponse.status).toBe(200);
+    expect(answerResponse.body.attempt.score).toBe(10);
+
+    const runResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-run`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(runResponse.status).toBe(200);
+    expect(runResponse.body.result.status).toBe("ACCEPTED");
+    expect(runResponse.body.result.totalCount).toBe(1);
+
+    const submissionResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(submissionResponse.status).toBe(201);
+    expect(submissionResponse.body.status).toBe("QUEUED");
+
+    const persistedSubmission = await repositories.submissionRepository.getById(submissionResponse.body.submissionId);
+    expect(persistedSubmission?.sourceType).toBe("contest_coding");
+    expect(persistedSubmission?.contestId).toBe(contest.id);
+    expect(persistedSubmission?.status).toBe("QUEUED");
+
+    const processedContestSubmission = await services.submissionService.processQueuedSubmission(
+      submissionResponse.body.submissionId,
+      "contest-job-1",
+    );
+    expect(processedContestSubmission.status).toBe("ACCEPTED");
+
+    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "TAB_SWITCH" });
+    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "VISIBILITY_LOSS" });
+    const autoSubmitResponse = await request(app)
+      .post(`/api/contests/${contest.id}/proctor-events`)
+      .send({ type: "COPY" });
+    expect(autoSubmitResponse.status).toBe(200);
+    expect(autoSubmitResponse.body.attempt.status).toBe("AUTO_SUBMITTED");
+
+    const blockedAnswerResponse = await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "B" });
+    expect(blockedAnswerResponse.status).toBe(409);
+
+    const attemptsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/attempts`)
+      .set(facultyHeaders);
+    expect(attemptsResponse.status).toBe(200);
+    expect(attemptsResponse.body.items[0].violationCount).toBe(3);
   });
 });

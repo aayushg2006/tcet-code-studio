@@ -1,7 +1,13 @@
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
 import type { Firestore } from "firebase-admin/firestore";
 import { toDate } from "../../shared/utils/date";
-import { normalizeDifficulty, normalizeNumber, normalizeProblemLifecycleState, normalizeRole } from "../../shared/utils/normalize";
+import {
+  normalizeDepartment,
+  normalizeDifficulty,
+  normalizeNumber,
+  normalizeProblemLifecycleState,
+  normalizeRole,
+} from "../../shared/utils/normalize";
 import type { ProblemRecord, ProblemTestCase } from "./problem.model";
 
 export interface ProblemRepository {
@@ -96,6 +102,7 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
     timeLimitSeconds: normalizeNumber(data.timeLimitSeconds ?? data.timeLimit, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS),
     memoryLimitMb: normalizeNumber(data.memoryLimitMb ?? data.memoryLimit, DEFAULT_PROBLEM_MEMORY_LIMIT_MB),
     lifecycleState,
+    targetDepartment: normalizeDepartment(data.targetDepartment),
     createdBy: typeof data.createdBy === "string" ? data.createdBy : "faculty@tcetmumbai.in",
     createdByRole: normalizeRole(data.createdByRole),
     totalSubmissions: normalizeNumber(data.totalSubmissions ?? data.submissions, 0),
@@ -139,6 +146,7 @@ export class FirestoreProblemRepository implements ProblemRepository {
         approved: problem.lifecycleState === "Published",
         timeLimit: problem.timeLimitSeconds,
         memoryLimit: problem.memoryLimitMb,
+        targetDepartment: problem.targetDepartment,
         examples: problem.sampleTestCases.map((testCase) => ({ ...testCase, hidden: false })).concat(
           problem.hiddenTestCases.map((testCase) => ({ ...testCase, hidden: true })),
         ),

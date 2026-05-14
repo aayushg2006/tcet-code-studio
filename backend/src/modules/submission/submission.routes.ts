@@ -9,6 +9,7 @@ export function createSubmissionRouter(dependencies: ApplicationDependencies): R
   const controller = createSubmissionController(dependencies.submissionService);
 
   router.use(dependencies.authMiddleware);
+  router.use(dependencies.profileCompletionMiddleware);
   router.post("/run", asyncHandler(controller.runSubmission));
   router.post("/", requireRole("STUDENT"), asyncHandler(controller.createSubmission));
   router.get("/", asyncHandler(controller.listSubmissions));

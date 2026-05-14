@@ -6,7 +6,7 @@ import { userApi } from "@/api/services";
 import { getHomePathForRole } from "@/lib/role-routing";
 
 type RoleRouteProps = {
-  allowedRole: UserRole;
+  allowedRole: UserRole | UserRole[];
   children: JSX.Element;
 };
 
@@ -32,16 +32,17 @@ export function RoleRoute({ allowedRole, children }: RoleRouteProps) {
     return <div className="container py-8 text-sm text-muted-foreground">Authenticating...</div>;
   }
 
-  if (user.role !== allowedRole) {
+  const allowedRoles = Array.isArray(allowedRole) ? allowedRole : [allowedRole];
+  if (!allowedRoles.includes(user.role)) {
     return <Navigate to={getHomePathForRole(user.role)} replace />;
   }
 
-  if (user.role === "STUDENT" && !user.isProfileComplete && pathname !== "/complete-profile") {
+  if (!user.isProfileComplete && pathname !== "/complete-profile") {
     return <Navigate to="/complete-profile" replace />;
   }
 
-  if (user.role === "STUDENT" && user.isProfileComplete && pathname === "/complete-profile") {
-    return <Navigate to="/student/dashboard" replace />;
+  if (user.isProfileComplete && pathname === "/complete-profile") {
+    return <Navigate to={getHomePathForRole(user.role)} replace />;
   }
 
   return children;

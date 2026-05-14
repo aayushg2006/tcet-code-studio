@@ -1,76 +1,49 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { contestsApi } from "@/api/services";
+import type { ContestListItem } from "@/api/types";
 
-type ContestStatus = "Live" | "Upcoming" | "Ended";
-type ContestType = "Rated" | "Practice";
-
-type Contest = {
-  id: string;
-  title: string;
-  startTime: string;
-  duration: string;
-  status: ContestStatus;
-  type: ContestType;
-  participants: number;
-};
-
-const mockContests: Contest[] = [
-  {
-    id: "tp-assessment-01",
-    title: "T&P Technical Screening Round 1",
-    startTime: "May 13, 2026 • 2:00 PM",
-    duration: "90 mins",
-    status: "Live",
-    type: "Rated",
-    participants: 214,
-  },
-  {
-    id: "dsa-marathon-04",
-    title: "DSA Practice Marathon #4",
-    startTime: "May 15, 2026 • 5:30 PM",
-    duration: "120 mins",
-    status: "Upcoming",
-    type: "Practice",
-    participants: 186,
-  },
-  {
-    id: "tp-mock-drive-02",
-    title: "T&P Mock Placement Drive #2",
-    startTime: "May 10, 2026 • 10:00 AM",
-    duration: "180 mins",
-    status: "Ended",
-    type: "Rated",
-    participants: 243,
-  },
-  {
-    id: "aptitude-bootcamp-01",
-    title: "Aptitude + Coding Warmup",
-    startTime: "May 09, 2026 • 6:00 PM",
-    duration: "60 mins",
-    status: "Ended",
-    type: "Practice",
-    participants: 129,
-  },
-];
-
-function getContestCta(status: ContestStatus): string {
+function getContestCta(status: "Live" | "Upcoming" | "Past", hasAttempted: boolean): string {
   if (status === "Live") {
     return "Enter Contest";
   }
   if (status === "Upcoming") {
-    return "Register";
+    return "View Contest";
   }
-  return "Upsolve";
+  return hasAttempted ? "View Report" : "Review";
 }
 
-function renderContestCards(contests: Contest[]) {
+function getAttemptStatusLabel(status: ContestListItem["attemptStatus"]): string {
+  switch (status) {
+    case "ACTIVE":
+      return "In Progress";
+    case "SUBMITTED":
+      return "Submitted";
+    case "AUTO_SUBMITTED":
+      return "Auto Submitted";
+    case "DISQUALIFIED":
+      return "Disqualified";
+    default:
+      return "Not Attempted";
+  }
+}
+
+function renderContestCards(
+  contests: Awaited<ReturnType<typeof contestsApi.list>>["items"],
+  pathname: string,
+) {
   if (contests.length === 0) {
-    return <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">No contests in this section.</Card>;
+    return (
+      <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
+        No contests in this section.
+      </Card>
+    );
   }
 
   return (
@@ -84,15 +57,19 @@ function renderContestCards(contests: Contest[]) {
                 <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>
                   {contest.type}
                 </Badge>
+                <Badge variant="outline">{contest.studentListStatus}</Badge>
+                <Badge variant="outline">{getAttemptStatusLabel(contest.attemptStatus)}</Badge>
               </div>
-              <p className="text-sm text-muted-foreground">Time: {contest.startTime}</p>
               <p className="text-sm text-muted-foreground">
-                Duration: {contest.duration} • Participants: {contest.participants}
+                Time: {new Date(contest.startAt).toLocaleString()}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Duration: {contest.durationMinutes} mins • Participants: {contest.participantsCount}
               </p>
             </div>
 
             <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-              <Link to={`/student/contests/${contest.id}`}>{getContestCta(contest.status)}</Link>
+              <Link to={`/student/contests/${contest.id}`}>{getContestCta(contest.studentListStatus, contest.hasAttempted)}</Link>
             </Button>
           </div>
         </Card>
@@ -102,9 +79,16 @@ function renderContestCards(contests: Contest[]) {
 }
 
 export default function Contests() {
-  const liveContests = mockContests.filter((contest) => contest.status === "Live");
-  const upcomingContests = mockContests.filter((contest) => contest.status === "Upcoming");
-  const pastContests = mockContests.filter((contest) => contest.status === "Ended");
+  const pathname = "/student/contests";
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["student-contests"],
+    queryFn: () => contestsApi.list({ pageSize: 100 }, pathname),
+  });
+
+  const contests = data?.items ?? [];
+  const liveContests = contests.filter((contest) => contest.studentListStatus === "Live");
+  const upcomingContests = contests.filter((contest) => contest.studentListStatus === "Upcoming");
+  const pastContests = contests.filter((contest) => contest.studentListStatus === "Past");
 
   return (
     <AppLayout>
@@ -115,20 +99,28 @@ export default function Contests() {
             <p className="mt-1 text-sm text-muted-foreground">Official T&P Assessments and Practice Rounds.</p>
           </div>
 
-          <Tabs defaultValue="live" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="live">Live</TabsTrigger>
-              <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-              <TabsTrigger value="past">Past</TabsTrigger>
-            </TabsList>
+          {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading contests...</Card>}
+          {isError && (
+            <Card className="p-6 text-center text-destructive">
+              {(error as Error)?.message || "Failed to load contests"}
+            </Card>
+          )}
 
-            <TabsContent value="live">{renderContestCards(liveContests)}</TabsContent>
-            <TabsContent value="upcoming">{renderContestCards(upcomingContests)}</TabsContent>
-            <TabsContent value="past">{renderContestCards(pastContests)}</TabsContent>
-          </Tabs>
+          {!isLoading && !isError && (
+            <Tabs defaultValue="live" className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="live">Live</TabsTrigger>
+                <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
+                <TabsTrigger value="past">Past</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="live">{renderContestCards(liveContests, pathname)}</TabsContent>
+              <TabsContent value="upcoming">{renderContestCards(upcomingContests, pathname)}</TabsContent>
+              <TabsContent value="past">{renderContestCards(pastContests, pathname)}</TabsContent>
+            </Tabs>
+          )}
         </div>
       </div>
     </AppLayout>
   );
 }
-

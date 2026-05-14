@@ -1,8 +1,9 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { env } from "../../config/env";
-import type { SubmissionStatus, SupportedLanguage } from "../../shared/types/domain";
+import type { Department, SubmissionStatus, SupportedLanguage } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
 import {
+  normalizeDepartment,
   normalizeDifficulty,
   normalizeExecutableLanguage,
   normalizeNumber,
@@ -10,10 +11,15 @@ import {
   normalizeSubmissionStatus,
 } from "../../shared/utils/normalize";
 import type { SubmissionRecord } from "./submission.model";
+import type { SubmissionSourceType } from "./submission.model";
 
 export interface SubmissionListFilters {
   userEmail?: string;
+  resourceOwnerEmail?: string;
+  userDepartment?: Department;
   problemId?: string;
+  contestId?: string;
+  sourceType?: SubmissionSourceType;
   status?: SubmissionStatus;
   language?: SupportedLanguage;
 }
@@ -33,11 +39,18 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     id: String(data.id ?? submissionId),
     queueJobId: typeof data.queueJobId === "string" ? data.queueJobId : null,
     judge0Token: typeof data.judge0Token === "string" ? data.judge0Token : null,
+    sourceType: data.sourceType === "contest_coding" ? "contest_coding" : "problem",
     userEmail: String(data.userEmail ?? ""),
     userRole: normalizeRole(data.userRole),
+    userDepartment: normalizeDepartment(data.userDepartment),
+    resourceOwnerEmail: typeof data.resourceOwnerEmail === "string" ? data.resourceOwnerEmail : "",
+    resourceTargetDepartment: normalizeDepartment(data.resourceTargetDepartment),
     problemId: String(data.problemId ?? ""),
     problemTitleSnapshot: typeof data.problemTitleSnapshot === "string" ? data.problemTitleSnapshot : String(data.problemTitle ?? ""),
     problemDifficultySnapshot: normalizeDifficulty(data.problemDifficultySnapshot ?? data.problemDifficulty),
+    contestId: typeof data.contestId === "string" ? data.contestId : null,
+    contestTitleSnapshot: typeof data.contestTitleSnapshot === "string" ? data.contestTitleSnapshot : null,
+    contestQuestionId: typeof data.contestQuestionId === "string" ? data.contestQuestionId : null,
     code: typeof data.code === "string" ? data.code : "",
     language: normalizeExecutableLanguage(data.language),
     status: normalizeSubmissionStatus(data.status),
@@ -83,7 +96,11 @@ export class FirestoreSubmissionRepository implements SubmissionRepository {
     return snapshot.docs
       .map((doc) => mapSubmissionRecord(doc.id, doc.data() as Record<string, unknown>))
       .filter((submission) => (filters.userEmail ? submission.userEmail === filters.userEmail : true))
+      .filter((submission) => (filters.resourceOwnerEmail ? submission.resourceOwnerEmail === filters.resourceOwnerEmail : true))
+      .filter((submission) => (filters.userDepartment ? submission.userDepartment === filters.userDepartment : true))
       .filter((submission) => (filters.problemId ? submission.problemId === filters.problemId : true))
+      .filter((submission) => (filters.contestId ? submission.contestId === filters.contestId : true))
+      .filter((submission) => (filters.sourceType ? submission.sourceType === filters.sourceType : true))
       .filter((submission) => (filters.status ? submission.status === filters.status : true))
       .filter((submission) => (filters.language ? submission.language === filters.language : true))
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
