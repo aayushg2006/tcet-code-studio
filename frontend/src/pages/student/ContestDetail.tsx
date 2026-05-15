@@ -282,13 +282,12 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {contest.computedStatus === "Upcoming" && (
+        {contest.computedStatus === "Upcoming" ? (
           <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
-            Questions and the coding workspace will unlock automatically when the contest becomes live.
+            Questions will be revealed when the contest starts.
           </Card>
-        )}
-
-        {contest.questions.map((question) => {
+        ) : (
+          contest.questions.map((question) => {
           const state = attempt?.questionStates.find((entry) => entry.questionId === question.id);
           const status = state?.status ?? "UNATTEMPTED";
           const answerValue = answers[question.id];
@@ -417,7 +416,7 @@ export default function ContestDetail() {
               )}
             </Card>
           );
-        })}
+        }))}
 
         {standingsEnabled && (
           <Card className="border border-border bg-background p-6 shadow-none">

@@ -168,6 +168,14 @@ function getFileExtension(language: ExecutableLanguage): string {
   return map[language] ?? language;
 }
 
+function formatRunStatus(status: SubmissionResult["status"]): string {
+  if (status === "ACCEPTED") {
+    return "Ran Successfully";
+  }
+
+  return toStatusLabel(status);
+}
+
 export default function ContestCodingWorkspace() {
   const { id = "", questionId = "" } = useParams();
   const pathname = `/student/contests/${id}/questions/${questionId}`;
@@ -298,7 +306,10 @@ export default function ContestCodingWorkspace() {
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
       <div className="border-b border-border bg-card">
         <div className="container flex h-12 items-center justify-between">
-          <Link to={`/student/contests/${id}`} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-accent">
+          <Link
+            to={`/student/contests/${id}`}
+            className="inline-flex items-center gap-1 rounded-none bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600"
+          >
             <ChevronLeft className="h-4 w-4" /> Back to contest
           </Link>
           <div className="text-xs text-muted-foreground">
@@ -308,10 +319,11 @@ export default function ContestCodingWorkspace() {
         </div>
       </div>
 
-      <div className="h-[calc(100vh-7rem)] min-h-[36rem] p-2 lg:p-3">
-        <ResizablePanelGroup direction="horizontal">
-          <ResizablePanel defaultSize={40} minSize={28} className="overflow-y-auto pr-2">
-            <Card className="h-full p-6 shadow-card">
+      <div className="h-[calc(100vh-4rem)] w-full overflow-hidden flex flex-col md:h-[calc(100vh-5rem)]">
+        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+          <ResizablePanel defaultSize={40} minSize={28} className="h-full overflow-y-auto">
+            <div className="p-6">
+              <Card className="h-full p-6 shadow-card">
               <div className="flex items-center gap-2">
                 <Badge variant="outline">Q{question.questionNumber}</Badge>
                 <Badge variant="outline">{contest.computedStatus}</Badge>
@@ -386,13 +398,14 @@ export default function ContestCodingWorkspace() {
                   </Card>
                 )}
               </section>
-            </Card>
+              </Card>
+            </div>
           </ResizablePanel>
 
-          <ResizableHandle withHandle />
+          <ResizableHandle withHandle className="bg-border" />
 
-          <ResizablePanel defaultSize={60} minSize={30}>
-            <div className="flex h-full flex-col gap-3">
+          <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
+            <div className="flex h-full min-h-0 flex-col gap-3">
               <Card className="overflow-hidden shadow-card">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
@@ -464,7 +477,7 @@ export default function ContestCodingWorkspace() {
                   <div className="text-sm text-muted-foreground">
                     {activeResult ? (
                       <>
-                        <span className="font-semibold text-foreground">{toStatusLabel(activeResult.status)}</span>
+                        <span className="font-semibold text-foreground">{formatRunStatus(activeResult.status)}</span>
                         {" \u2022 "}Runtime {activeResult.runtimeMs} ms{" \u2022 "}Memory {Math.max(activeResult.memoryKb / 1024, 0).toFixed(1)} MB
                       </>
                     ) : submissionReceipt ? (

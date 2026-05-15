@@ -40,7 +40,7 @@ function renderContestCards(
 ) {
   if (contests.length === 0) {
     return (
-      <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
+      <Card className="border border-border bg-background p-5 text-sm text-muted-foreground">
         No contests in this section.
       </Card>
     );
@@ -49,7 +49,7 @@ function renderContestCards(
   return (
     <div className="grid gap-4">
       {contests.map((contest) => (
-        <Card key={contest.id} className="border border-border bg-background p-5 shadow-none">
+        <Card key={contest.id} className="border border-border bg-background p-5 transition-all duration-200 hover:shadow-md">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -92,8 +92,7 @@ export default function Contests() {
 
   return (
     <AppLayout>
-      <div className="container py-8">
-        <div className="space-y-6">
+      <div className="container mx-auto space-y-6 p-6 md:p-8">
           <div>
             <h1 className="font-display text-3xl font-bold">Contests</h1>
             <p className="mt-1 text-sm text-muted-foreground">Official T&P Assessments and Practice Rounds.</p>
@@ -119,7 +118,6 @@ export default function Contests() {
               <TabsContent value="past">{renderContestCards(pastContests, pathname)}</TabsContent>
             </Tabs>
           )}
-        </div>
       </div>
     </AppLayout>
   );

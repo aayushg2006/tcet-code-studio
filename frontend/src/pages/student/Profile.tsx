@@ -35,7 +35,7 @@ function initialsFromName(name: string | null, email: string): string {
 
 function statCard(label: string, value: string | number) {
   return (
-    <Card className="border border-border bg-background p-5 shadow-none">
+    <Card className="border border-border bg-background p-5">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-2 text-4xl font-bold leading-none">{value}</p>
     </Card>
@@ -45,6 +45,13 @@ function statCard(label: string, value: string | number) {
 function formatWhen(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
 }
+
+const chartTooltipStyle = {
+  backgroundColor: "hsl(var(--background))",
+  borderColor: "hsl(var(--border))",
+  borderRadius: "8px",
+  color: "hsl(var(--foreground))",
+};
 
 export default function StudentProfile() {
   const { email: emailParam } = useParams();
@@ -95,7 +102,7 @@ export default function StudentProfile() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="container py-8 text-muted-foreground">Loading profile...</div>
+        <div className="container mx-auto p-6 text-muted-foreground md:p-8">Loading profile...</div>
       </AppLayout>
     );
   }
@@ -103,7 +110,7 @@ export default function StudentProfile() {
   if (isError || !userData?.user) {
     return (
       <AppLayout>
-        <div className="container py-8 text-destructive">{(error as Error)?.message || "Failed to load profile"}</div>
+        <div className="container mx-auto p-6 text-destructive md:p-8">{(error as Error)?.message || "Failed to load profile"}</div>
       </AppLayout>
     );
   }
@@ -114,7 +121,7 @@ export default function StudentProfile() {
 
   return (
     <AppLayout>
-      <div className="container space-y-6 bg-slate-50 py-8 dark:bg-background">
+      <div className="container mx-auto space-y-6 p-6 md:p-8">
         <div className="space-y-1">
           <h1 className="font-display text-3xl font-bold">
             {isFacultyView ? "Student Profile Dashboard" : "Academic Profile Dashboard"}
@@ -126,7 +133,7 @@ export default function StudentProfile() {
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
           <div className="md:col-span-4">
-            <Card className="relative border border-border bg-background p-6 shadow-none">
+            <Card className="relative border border-border bg-background p-6">
               <Badge
                 className={`absolute right-6 top-6 border-0 ${
                   profile.isProfileComplete
@@ -209,7 +216,7 @@ export default function StudentProfile() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card className="border border-border bg-background p-5 shadow-none">
+              <Card className="border border-border bg-background p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
                 <div className="mt-4 flex items-center justify-center">
                   <PieChart width={260} height={220}>
@@ -218,25 +225,25 @@ export default function StudentProfile() {
                         <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                   </PieChart>
                 </div>
               </Card>
 
-              <Card className="border border-border bg-background p-5 shadow-none">
+              <Card className="border border-border bg-background p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
                 <div className="mt-4 overflow-x-auto">
                   <BarChart width={320} height={220} data={languageData}>
                     <XAxis dataKey="name" tickLine={false} axisLine={false} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
                   </BarChart>
                 </div>
               </Card>
             </div>
 
-            <Card className="border border-border bg-background shadow-none">
+            <Card className="border border-border bg-background">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
               </CardHeader>
@@ -245,7 +252,7 @@ export default function StudentProfile() {
               </CardContent>
             </Card>
 
-            <Card className="border border-border bg-background p-5 shadow-none">
+            <Card className="border border-border bg-background p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Accepted</h2>
               <div className="mt-4 overflow-hidden rounded-md border border-border">
                 <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">
@@ -273,7 +280,7 @@ export default function StudentProfile() {
               </div>
             </Card>
 
-            <Card className="border border-border bg-background p-5 shadow-none">
+            <Card className="border border-border bg-background p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
               <div className="mt-4 overflow-hidden rounded-md border border-border">
                 <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">

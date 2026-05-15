@@ -72,7 +72,7 @@ export default function StudentDashboard() {
 
   return (
     <AppLayout>
-      <div className="container space-y-8 py-8">
+      <div className="container mx-auto space-y-6 p-6 md:p-8">
         <Card className="overflow-hidden border-0 shadow-elevated">
           <div className="relative bg-gradient-hero p-8 text-primary-foreground dark:bg-card dark:text-foreground">
             <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
@@ -161,7 +161,7 @@ export default function StudentDashboard() {
               <div className="grid gap-4 md:grid-cols-3">
                 {recommendedProblems.map((problem) => (
                   <Link to={`/student/problems/${problem.id}`} key={problem.id}>
-                    <Card className="h-full p-4 transition-colors hover:border-accent">
+                    <Card className="h-full p-4 transition-all duration-200 hover:border-accent hover:shadow-md">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold">{problem.title}</h3>
                         <DifficultyBadge d={problem.difficulty} />

@@ -40,7 +40,7 @@
     --input: 220 20% 88%;
     --ring: 25 95% 55%;
 
-    --radius: 0.75rem;
+    --radius: 0rem;
 
     --gradient-hero: linear-gradient(135deg, hsl(220 70% 22%), hsl(220 65% 32%));
     --gradient-accent: linear-gradient(135deg, hsl(25 95% 55%), hsl(38 92% 50%));
@@ -49,23 +49,23 @@
   }
 
   .dark {
-    --background: 220 50% 8%;
-    --foreground: 40 30% 95%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 220 45% 12%;
-    --card-foreground: 40 30% 95%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 220 45% 12%;
-    --popover-foreground: 40 30% 95%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
 
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 220 60% 10%;
 
-    --secondary: 220 40% 18%;
-    --secondary-foreground: 40 30% 95%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 220 35% 16%;
-    --muted-foreground: 40 15% 70%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 70%;
 
     --accent: 25 95% 55%;
     --accent-foreground: 220 60% 10%;
@@ -80,9 +80,11 @@
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 35% 20%;
-    --input: 220 35% 20%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
     --ring: 25 95% 55%;
+
+    --radius: 0rem;
 
     --gradient-hero: linear-gradient(135deg, hsl(220 60% 14%), hsl(220 50% 22%));
     --gradient-accent: linear-gradient(135deg, hsl(25 95% 55%), hsl(38 92% 50%));
@@ -97,6 +99,12 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
+    background-image: radial-gradient(hsl(var(--muted-foreground) / 0.14) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+  }
+  .dark body {
+    background-image: radial-gradient(hsl(var(--muted-foreground) / 0.12) 1px, transparent 1px);
   }
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
 }

@@ -26,6 +26,7 @@ import ProblemDetails from "./pages/faculty/ProblemDetails.tsx";
 import EditProblem from "./pages/faculty/EditProblem.tsx";
 import FacultySubmissions from "./pages/faculty/Submissions.tsx";
 import FacultyLeaderboard from "./pages/faculty/Leaderboard.tsx";
+import FacultyProfile from "./pages/faculty/Profile.tsx";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +60,7 @@ const App = () => (
             <Route path="/faculty/problems/:id/edit" element={<RoleRoute allowedRole="FACULTY"><EditProblem /></RoleRoute>} />
             <Route path="/faculty/submissions" element={<RoleRoute allowedRole="FACULTY"><FacultySubmissions /></RoleRoute>} />
             <Route path="/faculty/leaderboard" element={<RoleRoute allowedRole="FACULTY"><FacultyLeaderboard /></RoleRoute>} />
+            <Route path="/faculty/profile" element={<RoleRoute allowedRole="FACULTY"><FacultyProfile /></RoleRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
