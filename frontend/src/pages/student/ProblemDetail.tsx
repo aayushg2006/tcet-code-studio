@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Editor from "@monaco-editor/react";
+import type * as MonacoEditor from "monaco-editor";
 import {
   Play,
   Send,
   ChevronLeft,
   FileCode2,
-  Settings,
   RotateCcw,
   CheckCircle2,
   LoaderCircle,
@@ -16,9 +17,15 @@ import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { cn } from "@/lib/utils";
-import { submissionsApi, problemsApi } from "@/api/services";
+import { submissionsApi, problemsApi, userApi } from "@/api/services";
+import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
 import {
   EXECUTABLE_LANGUAGES,
   toLanguageLabel,
@@ -121,14 +128,22 @@ export default function ProblemDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
 
-  const [code, setCode] = useState(() => getStarterCode("cpp"));
   const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
-  const [tab, setTab] = useState<"tests" | "console" | "subs">("tests");
+  const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<ExecutableLanguage, string>>>({
+    cpp: getStarterCode("cpp"),
+  });
+  const [tab, setTab] = useState<"console" | "subs">("console");
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
   const [pendingSubmissionStatus, setPendingSubmissionStatus] = useState<SubmissionStatus | null>(null);
+  const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
   const pollingAbortRef = useRef<AbortController | null>(null);
+  const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const languageRef = useRef<ExecutableLanguage>("cpp");
+  const code = draftsByLanguage[language] ?? getStarterCode(language);
+
+  languageRef.current = language;
 
   useEffect(() => {
     return () => {
@@ -136,6 +151,33 @@ export default function ProblemDetail() {
       pollingAbortRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    pollingAbortRef.current?.abort();
+    pollingAbortRef.current = null;
+    setLanguage("cpp");
+    setDraftsByLanguage({
+      cpp: getStarterCode("cpp"),
+    });
+    setTab("console");
+    setRunResult(null);
+    setSubmitResult(null);
+    setPendingSubmissionId(null);
+    setPendingSubmissionStatus(null);
+    setCursorPosition({ lineNumber: 1, column: 1 });
+  }, [id]);
+
+  const handleFormatCode = async () => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    try {
+      await formatCodeInEditor(editorRef.current, language);
+    } catch (error) {
+      toast.error((error as Error).message || "Format failed");
+    }
+  };
 
   const { data: problemEnvelope, isLoading: problemLoading, isError: problemError, error: problemErrorObj } = useQuery({
     queryKey: ["student-problem-detail", id],
@@ -147,6 +189,12 @@ export default function ProblemDetail() {
     queryKey: ["student-problem-submissions", id],
     queryFn: () => submissionsApi.list({ problemId: id, pageSize: 25 }),
     enabled: Boolean(id),
+  });
+
+  const { data: currentUserData } = useQuery({
+    queryKey: ["student-problem-current-user"],
+    queryFn: () => userApi.me(`/student/problems/${id}`, { suppressAuthRedirect: true }),
+    retry: false,
   });
 
   const submissions = useMemo(
@@ -230,9 +278,19 @@ export default function ProblemDetail() {
       void beginSubmissionPolling(data.submission_id);
     },
     onError: (error) => {
-      toast.error((error as Error).message || "Submit failed");
+      const message = (error as Error).message || "Submit failed";
+      if (message.toLowerCase().includes("not allowed")) {
+        toast.error("Submission is allowed only for STUDENT role. Please sign in as a student.");
+        return;
+      }
+
+      toast.error(message);
     },
   });
+
+  if (currentUserData?.user.role === "FACULTY") {
+    return <Navigate to="/faculty/dashboard" replace />;
+  }
 
   if (problemLoading) {
     return (
@@ -268,6 +326,7 @@ export default function ProblemDetail() {
     : submitResult
       ? `${submitResult.stdout || ""}${submitResult.stderr ? `\n${submitResult.stderr}` : ""}`.trim()
       : "";
+  const lineCount = code.split("\n").length;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -283,246 +342,318 @@ export default function ProblemDetail() {
         </div>
       </div>
 
-      <div className="flex-1 gap-0 p-2 lg:grid lg:grid-cols-12 lg:gap-2 lg:p-3">
-        <Card className="max-h-[calc(100vh-12rem)] overflow-y-auto p-6 shadow-card lg:col-span-4">
-          <div className="flex items-start justify-between gap-2">
-            <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
-            <DifficultyBadge d={problem.difficulty} />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1">
-            {problem.tags.map((tag) => (
-              <span key={tag} className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-                {tag}
-              </span>
-            ))}
-          </div>
-
-          <section className="mt-6 space-y-5 text-sm leading-relaxed">
-            <div>
-              <h3 className="mb-1 font-display text-base font-semibold">Description</h3>
-              <p className="text-muted-foreground">{problem.statement}</p>
-            </div>
-            <div>
-              <h3 className="mb-1 font-display text-base font-semibold">Input Format</h3>
-              <p className="text-muted-foreground">{problem.inputFormat}</p>
-            </div>
-            <div>
-              <h3 className="mb-1 font-display text-base font-semibold">Output Format</h3>
-              <p className="text-muted-foreground">{problem.outputFormat}</p>
-            </div>
-            <div>
-              <h3 className="mb-1 font-display text-base font-semibold">Examples</h3>
-              <div className="space-y-2">
-                {problem.examples.map((testCase, index) => (
-                  <div key={`${testCase.input}-${index}`} className="rounded-md bg-secondary p-3 font-mono-code text-xs">
-                    <div>
-                      <span className="text-accent">Input:</span> {testCase.input}
-                    </div>
-                    <div>
-                      <span className="text-accent">Output:</span> {testCase.output}
-                    </div>
-                    {testCase.explanation && <div className="mt-2 text-muted-foreground">{testCase.explanation}</div>}
-                  </div>
+      <div className="h-[calc(100vh-7rem)] min-h-[36rem] p-2 lg:p-3">
+        <ResizablePanelGroup direction="horizontal">
+          <ResizablePanel defaultSize={40} minSize={25} className="overflow-y-auto pr-2">
+            <Card className="h-full p-6 shadow-card">
+              <div className="flex items-start justify-between gap-2">
+                <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
+                <DifficultyBadge d={problem.difficulty} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {problem.tags.map((tag) => (
+                  <span key={tag} className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+                    {tag}
+                  </span>
                 ))}
               </div>
-            </div>
-            <div>
-              <h3 className="mb-1 font-display text-base font-semibold">Constraints</h3>
-              <ul className="list-disc space-y-1 pl-5 font-mono-code text-xs text-muted-foreground">
-                {problem.constraints.map((constraint) => (
-                  <li key={constraint}>{constraint}</li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        </Card>
 
-        <div className="mt-2 flex flex-col gap-2 lg:col-span-5 lg:mt-0">
-          <Card className="flex flex-1 flex-col overflow-hidden shadow-card">
-            <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <select
-                  value={language}
-                  onChange={(event) => {
-                    const nextLanguage = event.target.value as ExecutableLanguage;
-                    const shouldSwapStarter = code.trim().length === 0 || code === currentStarterCode;
-
-                    setLanguage(nextLanguage);
-                    if (shouldSwapStarter) {
-                      setCode(getStarterCode(nextLanguage));
-                    }
-                  }}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
-                >
-                  {EXECUTABLE_LANGUAGES.map((lang) => (
-                    <option key={lang} value={lang}>
-                      {toLanguageLabel(lang)}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
-                  <FileCode2 className="h-3 w-3 text-accent" />
-                  <span className="font-mono-code">{getSolutionFilename(language)}</span>
+              <section className="mt-6 space-y-5 text-sm leading-relaxed">
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Description</h3>
+                  <p className="text-muted-foreground">{problem.statement}</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => setCode(currentStarterCode)}
-                  aria-label="Reset"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Settings">
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-            <div className="grid min-h-[360px] flex-1 grid-cols-[3rem_1fr] bg-[hsl(220_50%_8%)] font-mono-code text-sm text-[hsl(40_30%_92%)] dark:bg-background">
-              <div className="select-none border-r border-[hsl(220_30%_18%)] py-3 pr-2 text-right text-xs text-[hsl(220_15%_50%)]">
-                {code.split("\n").map((_, index) => (
-                  <div key={index} className="leading-6">
-                    {index + 1}
-                  </div>
-                ))}
-              </div>
-              <textarea
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                spellCheck={false}
-                className="w-full resize-none bg-transparent p-3 text-sm leading-6 outline-none"
-              />
-            </div>
-            <div className="flex items-center justify-between border-t border-border bg-secondary/50 px-3 py-1.5 font-mono-code text-[11px] text-muted-foreground">
-              <span>Ln {code.split("\n").length}, Col 1</span>
-              <span>UTF-8 {"\u2022"} LF {"\u2022"} {toLanguageLabel(language)}</span>
-            </div>
-          </Card>
-
-          <Card className="flex items-center justify-between gap-2 p-3 shadow-card">
-            <div className="text-xs text-muted-foreground">
-              {isSubmissionProcessing ? (
-                <span className="flex items-center gap-1.5">
-                  <LoaderCircle className="h-4 w-4 animate-spin text-accent" />
-                  Processing submission {pendingSubmissionStatus ? `(${formatStatus(pendingSubmissionStatus)})` : "..."}
-                </span>
-              ) : activeResult ? (
-                <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {formatStatus(activeResult.status)}
-                </span>
-              ) : (
-                "Run code to see results"
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}>
-                <Play className="mr-1 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
-              </Button>
-              <Button
-                onClick={() => submitMutation.mutate()}
-                disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}
-                className="bg-accent text-accent-foreground hover:bg-accent/90"
-              >
-                {isSubmissionProcessing ? <LoaderCircle className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />}
-                {submitMutation.isPending || isSubmissionProcessing ? "Processing..." : "Submit"}
-              </Button>
-            </div>
-          </Card>
-        </div>
-
-        <Card className="mt-2 flex flex-col overflow-hidden shadow-card lg:col-span-3 lg:mt-0">
-          <div className="flex border-b border-border bg-secondary/50">
-            {(["tests", "console", "subs"] as const).map((section) => (
-              <button
-                key={section}
-                onClick={() => setTab(section)}
-                className={cn(
-                  "flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors",
-                  tab === section ? "border-b-2 border-accent bg-background text-accent" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {section === "tests" ? "Test Cases" : section === "console" ? "Console" : "Submissions"}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
-            {tab === "tests" && (
-              <>
-                {activeResult && (
-                  <div
-                    className={cn(
-                      "rounded-md border p-3",
-                      activeResult.status === "ACCEPTED"
-                        ? "border-success/30 bg-success/10 text-success"
-                        : "border-destructive/30 bg-destructive/10 text-destructive",
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <StatusBadge status={formatStatus(activeResult.status)} />
-                      <span className="font-mono-code text-xs">
-                        {activeResult.passedCount}/{activeResult.totalCount} passed
-                      </span>
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 font-mono-code text-xs text-foreground">
-                      <div className="rounded bg-background p-2">
-                        <div className="text-muted-foreground">Runtime</div>
-                        {activeResult.runtimeMs} ms
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Input Format</h3>
+                  <p className="text-muted-foreground">{problem.inputFormat}</p>
+                </div>
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Output Format</h3>
+                  <p className="text-muted-foreground">{problem.outputFormat}</p>
+                </div>
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Examples</h3>
+                  <div className="space-y-2">
+                    {problem.examples.map((example, index) => (
+                      <div key={`${example.input}-${index}`} className="rounded-md bg-secondary p-3 font-mono-code text-xs">
+                        <div>
+                          <span className="text-accent">Input:</span> {example.input}
+                        </div>
+                        <div>
+                          <span className="text-accent">Output:</span> {example.output}
+                        </div>
+                        {example.explanation && <div className="mt-2 text-muted-foreground">{example.explanation}</div>}
                       </div>
-                      <div className="rounded bg-background p-2">
-                        <div className="text-muted-foreground">Memory</div>
-                        {(activeResult.memoryKb / 1024).toFixed(1)} MB
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Constraints</h3>
+                  <ul className="list-disc space-y-1 pl-5 font-mono-code text-xs text-muted-foreground">
+                    {problem.constraints.map((constraint) => (
+                      <li key={constraint}>{constraint}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="mb-1 font-display text-base font-semibold">Sample Test Cases</h3>
+                  <div className="space-y-2">
+                    {testCases.map((testCase, index) => (
+                      <div key={`${testCase.input}-${index}`} className="rounded-md border border-border p-3">
+                        <div className="mb-2 text-xs font-semibold">Case {index + 1}</div>
+                        <label className="text-[11px] uppercase tracking-wider text-muted-foreground">Input</label>
+                        <div className="mt-1 rounded border border-border bg-secondary px-2 py-1.5 font-mono-code text-xs">
+                          {testCase.input}
+                        </div>
+                        <label className="mt-2 block text-[11px] uppercase tracking-wider text-muted-foreground">Expected</label>
+                        <div className="mt-1 rounded bg-secondary px-2 py-1.5 font-mono-code text-xs">{testCase.output}</div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </Card>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          <ResizablePanel defaultSize={60} minSize={30}>
+            <div className="h-full min-h-0 pl-2">
+              <ResizablePanelGroup direction="vertical" className="gap-2">
+                <ResizablePanel defaultSize={68} minSize={35}>
+                  <div className="flex h-full min-h-0 flex-col gap-2">
+                    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden shadow-card">
+                      <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={language}
+                            onChange={(event) => {
+                              const nextLanguage = event.target.value as ExecutableLanguage;
+                              setDraftsByLanguage((currentDrafts) =>
+                                currentDrafts[nextLanguage]
+                                  ? currentDrafts
+                                  : {
+                                      ...currentDrafts,
+                                      [nextLanguage]: getStarterCode(nextLanguage),
+                                    },
+                              );
+                              setLanguage(nextLanguage);
+                            }}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
+                          >
+                            {EXECUTABLE_LANGUAGES.map((lang) => (
+                              <option key={lang} value={lang}>
+                                {toLanguageLabel(lang)}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
+                            <FileCode2 className="h-3 w-3 text-accent" />
+                            <span className="font-mono-code">{getSolutionFilename(language)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => void handleFormatCode()}
+                          >
+                            Format
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() =>
+                              setDraftsByLanguage((currentDrafts) => ({
+                                ...currentDrafts,
+                                [language]: currentStarterCode,
+                              }))
+                            }
+                            aria-label="Reset"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="min-h-[320px] flex-1 bg-[hsl(220_50%_8%)]">
+                        <Editor
+                          beforeMount={(monaco) => {
+                            configureCodeEditor(monaco);
+                          }}
+                          onMount={(editor, monaco) => {
+                            editorRef.current = editor;
+                            setCursorPosition(editor.getPosition() ?? { lineNumber: 1, column: 1 });
+
+                            editor.onDidChangeCursorPosition((event) => {
+                              setCursorPosition(event.position);
+                            });
+
+                            editor.addAction({
+                              id: "tcet.format-code",
+                              label: "Format Code",
+                              keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+                              run: async (currentEditor) => {
+                                await formatCodeInEditor(currentEditor, languageRef.current);
+                              },
+                            });
+                          }}
+                          path={`${id}/${language}/${getSolutionFilename(language)}`}
+                          height="100%"
+                          language={getMonacoLanguage(language)}
+                          theme="vs-dark"
+                          value={code}
+                          onChange={(nextValue) =>
+                            setDraftsByLanguage((currentDrafts) => ({
+                              ...currentDrafts,
+                              [language]: nextValue ?? "",
+                            }))
+                          }
+                          options={{
+                            automaticLayout: true,
+                            autoIndent: "full",
+                            bracketPairColorization: { enabled: true },
+                            cursorBlinking: "smooth",
+                            fontFamily: "var(--font-mono, 'Fira Code', monospace)",
+                            fontLigatures: true,
+                            fontSize: 14,
+                            formatOnPaste: true,
+                            formatOnType: true,
+                            glyphMargin: false,
+                            lineHeight: 24,
+                            minimap: { enabled: false },
+                            padding: { top: 12, bottom: 12 },
+                            renderLineHighlight: "all",
+                            roundedSelection: true,
+                            scrollBeyondLastLine: false,
+                            smoothScrolling: true,
+                            tabSize: 4,
+                            wordWrap: "off",
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between border-t border-border bg-secondary/50 px-3 py-1.5 font-mono-code text-[11px] text-muted-foreground">
+                        <span>Ln {cursorPosition.lineNumber}/{lineCount}, Col {cursorPosition.column}</span>
+                        <span>UTF-8 {"\u2022"} LF {"\u2022"} {toLanguageLabel(language)}</span>
+                      </div>
+                    </Card>
+
+                    <Card className="flex items-center justify-between gap-2 p-3 shadow-card">
+                      <div className="text-xs text-muted-foreground">
+                        {isSubmissionProcessing ? (
+                          <span className="flex items-center gap-1.5">
+                            <LoaderCircle className="h-4 w-4 animate-spin text-accent" />
+                            Processing submission {pendingSubmissionStatus ? `(${formatStatus(pendingSubmissionStatus)})` : "..."}
+                          </span>
+                        ) : activeResult ? (
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {formatStatus(activeResult.status)}
+                          </span>
+                        ) : (
+                          "Run code to see results"
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}>
+                          <Play className="mr-1 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
+                        </Button>
+                        <Button
+                          onClick={() => submitMutation.mutate()}
+                          disabled={runMutation.isPending || submitMutation.isPending || isSubmissionProcessing}
+                          className="bg-accent text-accent-foreground hover:bg-accent/90"
+                        >
+                          {isSubmissionProcessing ? <LoaderCircle className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />}
+                          {submitMutation.isPending || isSubmissionProcessing ? "Processing..." : "Submit"}
+                        </Button>
+                      </div>
+                    </Card>
+                  </div>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                <ResizablePanel defaultSize={32} minSize={20}>
+                  <Card className="flex h-full min-h-[220px] flex-col overflow-hidden shadow-card">
+                    <div className="flex border-b border-border bg-secondary/50">
+                      {(["console", "subs"] as const).map((section) => (
+                        <button
+                          key={section}
+                          onClick={() => setTab(section)}
+                          className={cn(
+                            "flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors",
+                            tab === section ? "border-b-2 border-accent bg-background text-accent" : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {section === "console" ? "Console" : "Submissions"}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                )}
-                {testCases.map((testCase, index) => (
-                  <div key={`${testCase.input}-${index}`} className="rounded-md border border-border p-3">
-                    <div className="mb-2 text-xs font-semibold">Case {index + 1}</div>
-                    <label className="text-[11px] uppercase tracking-wider text-muted-foreground">Input</label>
-                    <div className="mt-1 rounded border border-border bg-secondary px-2 py-1.5 font-mono-code text-xs">
-                      {testCase.input}
+                    <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+                      {activeResult && (
+                        <div
+                          className={cn(
+                            "rounded-md border p-3",
+                            activeResult.status === "ACCEPTED"
+                              ? "border-success/30 bg-success/10 text-success"
+                              : "border-destructive/30 bg-destructive/10 text-destructive",
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <StatusBadge status={formatStatus(activeResult.status)} />
+                            <span className="font-mono-code text-xs">
+                              {activeResult.passedCount}/{activeResult.totalCount} passed
+                            </span>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 font-mono-code text-xs text-foreground">
+                            <div className="rounded bg-background p-2">
+                              <div className="text-muted-foreground">Runtime</div>
+                              {activeResult.runtimeMs} ms
+                            </div>
+                            <div className="rounded bg-background p-2">
+                              <div className="text-muted-foreground">Memory</div>
+                              {(activeResult.memoryKb / 1024).toFixed(1)} MB
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {tab === "console" && (
+                        <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
+                          {runMutation.isPending
+                            ? "$ Running solution against test cases..."
+                            : isSubmissionProcessing
+                              ? `$ Submission ${pendingSubmissionId ?? ""} is ${pendingSubmissionStatus ? formatStatus(pendingSubmissionStatus) : "Processing"}...`
+                              : activeConsoleOutput || (activeResult ? `Status: ${formatStatus(activeResult.status)}` : "// stdout/stderr will appear here")}
+                        </pre>
+                      )}
+                      {tab === "subs" && (
+                        <div className="space-y-2">
+                          {isSubmissionProcessing && (
+                            <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 p-2 text-xs">
+                              <StatusBadge status={formatStatus(pendingSubmissionStatus ?? "QUEUED")} />
+                              <span className="font-mono-code text-muted-foreground">processing</span>
+                              <span className="flex items-center gap-1 text-accent">
+                                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                live
+                              </span>
+                            </div>
+                          )}
+                          {submissions.length === 0 && !isSubmissionProcessing && <div className="text-xs text-muted-foreground">No submissions yet.</div>}
+                          {submissions.map((submission) => (
+                            <div key={submission.id} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
+                              <StatusBadge status={formatStatus(submission.status)} />
+                              <span className="font-mono-code text-muted-foreground">{submission.runtimeMs} ms</span>
+                              <span className="text-muted-foreground">{formatRelativeTime(submission.createdAt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <label className="mt-2 block text-[11px] uppercase tracking-wider text-muted-foreground">Expected</label>
-                    <div className="mt-1 rounded bg-secondary px-2 py-1.5 font-mono-code text-xs">{testCase.output}</div>
-                  </div>
-                ))}
-              </>
-            )}
-            {tab === "console" && (
-              <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
-                {runMutation.isPending
-                  ? "$ Running solution against test cases..."
-                  : isSubmissionProcessing
-                    ? `$ Submission ${pendingSubmissionId ?? ""} is ${pendingSubmissionStatus ? formatStatus(pendingSubmissionStatus) : "Processing"}...`
-                    : activeConsoleOutput || (activeResult ? `Status: ${formatStatus(activeResult.status)}` : "// stdout/stderr will appear here")}
-              </pre>
-            )}
-            {tab === "subs" && (
-              <div className="space-y-2">
-                {isSubmissionProcessing && (
-                  <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 p-2 text-xs">
-                    <StatusBadge status={formatStatus(pendingSubmissionStatus ?? "QUEUED")} />
-                    <span className="font-mono-code text-muted-foreground">processing</span>
-                    <span className="flex items-center gap-1 text-accent">
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      live
-                    </span>
-                  </div>
-                )}
-                {submissions.length === 0 && !isSubmissionProcessing && <div className="text-xs text-muted-foreground">No submissions yet.</div>}
-                {submissions.map((submission) => (
-                  <div key={submission.id} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
-                    <StatusBadge status={formatStatus(submission.status)} />
-                    <span className="font-mono-code text-muted-foreground">{submission.runtimeMs} ms</span>
-                    <span className="text-muted-foreground">{formatRelativeTime(submission.createdAt)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Card>
+                  </Card>
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );

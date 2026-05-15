@@ -40,9 +40,10 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
 ];
 
 export const EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["vanilla", "react", "html", "css"];
+export const EXECUTION_EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["react", "html", "css"];
 
 export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
-  (language): language is ExecutableLanguage => !EDITOR_ONLY_LANGUAGES.includes(language),
+  (language): language is ExecutableLanguage => !EXECUTION_EDITOR_ONLY_LANGUAGES.includes(language),
 );
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
@@ -153,6 +154,7 @@ export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): P
     memoryLimitMb: problem.memoryLimitMb,
     sampleTestCases: problem.sampleTestCases,
     hiddenTestCases: [],
+    targetDepartment: problem.targetDepartment ?? null,
   };
 }
 
@@ -169,6 +171,7 @@ export function toEditorDataFromManageProblem(problem: ManageProblemDetail): Pro
     memoryLimitMb: problem.memoryLimitMb,
     sampleTestCases: problem.sampleTestCases,
     hiddenTestCases: problem.hiddenTestCases,
+    targetDepartment: problem.targetDepartment ?? null,
     lifecycleState: problem.lifecycleState,
   };
 }
@@ -198,6 +201,7 @@ export function toProblemWritePayload(
     timeLimitSeconds: Number(data.timeLimitSeconds),
     memoryLimitMb: Number(data.memoryLimitMb),
     lifecycleState,
+    targetDepartment: data.targetDepartment ?? null,
     sampleTestCases: cleanTestCases(data.sampleTestCases),
     hiddenTestCases: cleanTestCases(data.hiddenTestCases),
   };
@@ -214,6 +218,7 @@ export function toProblemUpdatePayload(data: ProblemEditorData): ProblemUpdatePa
     tags: data.tags.map((tag) => tag.trim()).filter(Boolean),
     timeLimitSeconds: Number(data.timeLimitSeconds),
     memoryLimitMb: Number(data.memoryLimitMb),
+    targetDepartment: data.targetDepartment ?? null,
     sampleTestCases: cleanTestCases(data.sampleTestCases),
     hiddenTestCases: cleanTestCases(data.hiddenTestCases),
   };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiRequest, getApiBaseUrl, getMockHeadersForPath } from "@/api/client";
+import { ApiError, apiRequest, getApiBaseUrl } from "@/api/client";
 
 describe("api client", () => {
   afterEach(() => {
@@ -11,15 +11,7 @@ describe("api client", () => {
     expect(getApiBaseUrl()).toBeTruthy();
   });
 
-  it("builds route-based mock headers", () => {
-    const studentHeaders = getMockHeadersForPath("/student/problems");
-    const facultyHeaders = getMockHeadersForPath("/faculty/dashboard");
-
-    expect(studentHeaders["x-mock-role"]).toBe("STUDENT");
-    expect(facultyHeaders["x-mock-role"]).toBe("FACULTY");
-  });
-
-  it("adds route-based headers and parses json response", async () => {
+  it("adds frontend pathname header and parses json response", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -36,7 +28,7 @@ describe("api client", () => {
 
     const [, options] = fetchMock.mock.calls[0];
     const requestHeaders = options?.headers as Record<string, string>;
-    expect(requestHeaders["x-mock-role"]).toBe("STUDENT");
+    expect(requestHeaders["x-frontend-pathname"]).toBe("/student/dashboard");
   });
 
   it("normalizes backend error payload", async () => {
@@ -56,5 +48,28 @@ describe("api client", () => {
 
     expect(caughtError).toBeInstanceOf(ApiError);
     expect(caughtError).toMatchObject({ status: 400, message: "Validation failed" });
+  });
+
+  it("includes loginUrl in unauthorized responses", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: "Authentication required.", loginUrl: "http://localhost:4000/login" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    let caughtError: unknown;
+    try {
+      await apiRequest("/api/users/me", { suppressAuthRedirect: true });
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(ApiError);
+    expect(caughtError).toMatchObject({
+      status: 401,
+      message: "Authentication required.",
+      loginUrl: "http://localhost:4000/login",
+    });
   });
 });

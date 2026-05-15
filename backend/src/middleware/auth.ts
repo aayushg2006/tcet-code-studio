@@ -1,8 +1,11 @@
 import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
-import { AppError } from "../shared/errors/app-error";
+import { db } from "../firebase";
+import type { UserRecord } from "../modules/user/user.model";
+import { FirestoreUserRepository } from "../modules/user/user.repository";
 import type { AuthenticatedUser, UserRole } from "../shared/types/auth";
+import { normalizeDepartment } from "../shared/utils/normalize";
 
 type JwtPayload = {
   email?: string;
@@ -11,79 +14,213 @@ type JwtPayload = {
   uid?: string;
   department?: string;
   status?: string;
+  exp?: number;
 };
 
-const DEFAULT_MOCK_USER: AuthenticatedUser = {
-  email: env.MOCK_AUTH_DEFAULT_EMAIL,
-  role: env.MOCK_AUTH_DEFAULT_ROLE,
-  name: env.MOCK_AUTH_DEFAULT_NAME,
-  uid: env.MOCK_AUTH_DEFAULT_UID,
-  department: env.MOCK_AUTH_DEFAULT_DEPARTMENT,
-  status: "ACTIVE",
-};
+type CoeRole = "ADMIN" | "FACULTY" | "STUDENT" | "INDUSTRY";
 
-function normalizeRole(role: string | undefined): UserRole {
-  return role?.toUpperCase() === "FACULTY" ? "FACULTY" : "STUDENT";
+const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
+const TOKEN_COOKIE_NAME = "coe_shared_token";
+const ALLOWED_ROLES = new Set<CoeRole>(["ADMIN", "FACULTY", "STUDENT", "INDUSTRY"]);
+const userRepository = new FirestoreUserRepository(db);
+
+function normalizeRole(role: string | undefined): CoeRole | null {
+  const normalized = role?.trim().toUpperCase();
+  if (!normalized || !ALLOWED_ROLES.has(normalized as CoeRole)) {
+    return null;
+  }
+  return normalized as CoeRole;
 }
 
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value[0];
+function getRequestUrl(req: Parameters<RequestHandler>[0]): string {
+  const host = req.get("host");
+  if (!host) {
+    return req.originalUrl;
   }
 
-  return value;
+  return `${req.protocol}://${host}${req.originalUrl}`;
 }
 
-function buildMockUser(headers: Record<string, string | string[] | undefined>): AuthenticatedUser {
-  return {
-    email: firstHeaderValue(headers["x-mock-email"])?.trim() || DEFAULT_MOCK_USER.email,
-    role: normalizeRole(firstHeaderValue(headers["x-mock-role"])),
-    name: firstHeaderValue(headers["x-mock-name"])?.trim() || DEFAULT_MOCK_USER.name,
-    uid: firstHeaderValue(headers["x-mock-uid"])?.trim() || DEFAULT_MOCK_USER.uid,
-    department: firstHeaderValue(headers["x-mock-department"])?.trim() || DEFAULT_MOCK_USER.department,
-    status: "ACTIVE",
-  };
+function normalizeOrigin(origin: string): string {
+  return origin.trim().toLowerCase().replace(/\/$/, "");
+}
+
+function resolveFrontendOrigin(req: Parameters<RequestHandler>[0]): string {
+  const requestOrigin = req.get("origin");
+  if (!requestOrigin) {
+    return DEFAULT_FRONTEND_HOME;
+  }
+
+  const configuredOrigins = env.corsOrigins.map(normalizeOrigin);
+  const allowedOrigins = new Set<string>([
+    ...configuredOrigins,
+    ...configuredOrigins
+      .filter((origin) => origin.includes("localhost"))
+      .map((origin) => origin.replace("localhost", "127.0.0.1")),
+    normalizeOrigin(DEFAULT_FRONTEND_HOME),
+    normalizeOrigin(DEFAULT_FRONTEND_HOME.replace("localhost", "127.0.0.1")),
+  ]);
+
+  const normalizedOrigin = normalizeOrigin(requestOrigin);
+  if (!allowedOrigins.has(normalizedOrigin)) {
+    return DEFAULT_FRONTEND_HOME;
+  }
+
+  return normalizedOrigin;
+}
+
+function buildApiSsoCallbackUrl(req: Parameters<RequestHandler>[0]): string {
+  const host = req.get("host") ?? `${req.hostname || "localhost"}:3001`;
+  const backendBaseUrl = `${req.protocol}://${host}`;
+  const frontendOrigin = resolveFrontendOrigin(req);
+  return `${backendBaseUrl}/api/auth/sso/callback?frontendOrigin=${encodeURIComponent(frontendOrigin)}`;
+}
+
+function buildLoginUrl(req: Parameters<RequestHandler>[0]): string {
+  const loginHost = req.hostname || "localhost";
+  const loginUrl = `${req.protocol}://${loginHost}:4000/login`;
+  const callbackTarget = req.originalUrl.startsWith("/api/")
+    ? buildApiSsoCallbackUrl(req)
+    : getRequestUrl(req);
+  return `${loginUrl}?callbackUrl=${encodeURIComponent(callbackTarget)}`;
+}
+
+function redirectToLogin(req: Parameters<RequestHandler>[0], res: Parameters<RequestHandler>[1]): void {
+  const loginUrl = buildLoginUrl(req);
+  const isSsoCallback = req.originalUrl.startsWith("/api/auth/sso/callback");
+
+  if (req.originalUrl.startsWith("/api/") && !isSsoCallback) {
+    res.status(401).json({
+      message: "Authentication required.",
+      loginUrl,
+    });
+    return;
+  }
+
+  res.redirect(302, loginUrl);
 }
 
 function buildJwtUser(payload: JwtPayload): AuthenticatedUser {
   if (!payload.email) {
-    throw new AppError(403, "Invalid token payload");
+    throw new Error("Invalid token payload");
+  }
+
+  const role = normalizeRole(payload.role);
+  if (!role) {
+    throw new Error("Invalid token role");
   }
 
   return {
-    email: payload.email,
-    role: normalizeRole(payload.role),
+    email: payload.email.trim().toLowerCase(),
+    role: role as UserRole,
     name: payload.name,
     uid: payload.uid,
-    department: payload.department,
-    status: payload.status ?? "ACTIVE",
+    department: normalizeDepartment(payload.department) ?? undefined,
+    status: payload.status?.trim().toUpperCase() ?? "ACTIVE",
   };
 }
 
-export const authMiddleware: RequestHandler = (req, _res, next) => {
+function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
+  return {
+    email: authUser.email,
+    role: authUser.role,
+    name: authUser.name ?? null,
+    uid: authUser.uid ?? null,
+    isProfileComplete: false,
+    designation: null,
+    rollNumber: null,
+    department: normalizeDepartment(authUser.department) ?? null,
+    semester: null,
+    linkedInUrl: null,
+    githubUrl: null,
+    skills: [],
+    rating: 0,
+    score: 0,
+    problemsSolved: 0,
+    submissionCount: 0,
+    acceptedSubmissionCount: 0,
+    accuracy: 0,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: now,
+    lastAcceptedAt: null,
+  };
+}
+
+export const authMiddleware: RequestHandler = async (req, res, next) => {
   try {
-    const authMode = env.AUTH_MODE;
-
-    if (authMode === "mock") {
-      req.user = buildMockUser(req.headers);
-      return next();
-    }
-
-    const token = req.cookies?.coe_shared_token;
+    const token = req.cookies?.[TOKEN_COOKIE_NAME];
     if (!token) {
-      throw new AppError(401, "Not logged in");
+      redirectToLogin(req, res);
+      return;
     }
 
-    const decoded = jwt.verify(token, env.COE_SHARED_TOKEN_SECRET) as JwtPayload;
+    let decoded: JwtPayload;
+    try {
+      decoded = jwt.verify(token, env.COE_SHARED_TOKEN_SECRET, {
+        algorithms: ["HS256"],
+      }) as JwtPayload;
+    } catch (verificationError) {
+      if (verificationError instanceof jwt.TokenExpiredError) {
+        res.clearCookie(TOKEN_COOKIE_NAME, { path: "/" });
+        redirectToLogin(req, res);
+        return;
+      }
+
+      if (
+        verificationError instanceof jwt.JsonWebTokenError ||
+        verificationError instanceof jwt.NotBeforeError
+      ) {
+        // Stale/corrupt cookies should trigger a clean re-login, not leave user stuck.
+        res.clearCookie(TOKEN_COOKIE_NAME, { path: "/" });
+        redirectToLogin(req, res);
+        return;
+      }
+
+      throw verificationError;
+    }
+
     const user = buildJwtUser(decoded);
 
-    if (user.status !== "ACTIVE") {
-      throw new AppError(403, "Inactive user");
+    if (user.status === "PENDING") {
+      res.status(403).json({ message: "Your account is pending approval." });
+      return;
     }
 
-    req.user = user;
+    if (user.status === "REJECTED") {
+      res.status(403).json({ message: "Your account has been rejected." });
+      return;
+    }
+
+    const existingUser = await userRepository.getByEmail(user.email);
+    const now = new Date();
+    const resolvedUser =
+      existingUser === null
+        ? createDefaultUser(user, now)
+        : {
+            ...existingUser,
+            role: user.role,
+            updatedAt: now,
+            lastLoginAt: now,
+          };
+
+    await userRepository.save(resolvedUser);
+    req.user = {
+      email: resolvedUser.email,
+      role: resolvedUser.role,
+      name: resolvedUser.name ?? undefined,
+      uid: resolvedUser.uid ?? undefined,
+      department: resolvedUser.department ?? undefined,
+      status: user.status,
+    };
+
     return next();
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Invalid token")) {
+      res.status(403).json({ message: "Invalid authentication token." });
+      return;
+    }
+
     return next(error);
   }
 };

@@ -1,11 +1,14 @@
 import { z } from "zod";
-import { SUPPORTED_LANGUAGES } from "../../shared/constants/domain";
-import type { ExecutableLanguage, SupportedLanguage } from "../../shared/types/domain";
+import { DEPARTMENTS, SUPPORTED_LANGUAGES } from "../../shared/constants/domain";
+import type { Department, ExecutableLanguage, SupportedLanguage } from "../../shared/types/domain";
 import {
   isExecutableLanguage,
+  normalizeDepartment,
   normalizeSubmissionStatus,
   tryNormalizeSupportedLanguage,
 } from "../../shared/utils/normalize";
+
+const departmentSchema = z.enum(DEPARTMENTS);
 
 const supportedLanguageSchema = z
   .string()
@@ -36,7 +39,28 @@ export const submissionRequestSchema = z.object({
 
 export const submissionQuerySchema = z.object({
   problemId: z.string().optional(),
+  contestId: z.string().optional(),
+  sourceType: z.enum(["problem", "contest_coding"]).optional(),
   userEmail: z.string().email().optional(),
+  studentDepartment: z
+    .union([departmentSchema, z.string()])
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value === "") {
+        return undefined;
+      }
+
+      const normalized = normalizeDepartment(value);
+      if (!normalized) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid department",
+        });
+        return z.NEVER;
+      }
+
+      return normalized;
+    }),
   status: z
     .string()
     .optional()

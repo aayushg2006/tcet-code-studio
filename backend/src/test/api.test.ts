@@ -32,6 +32,51 @@ async function createProblem(app: Parameters<typeof request>[0], overrides: Reco
   return response.body.problem;
 }
 
+async function createContest(app: Parameters<typeof request>[0], overrides: Record<string, unknown> = {}) {
+  const response = await request(app)
+    .post("/api/contests")
+    .set(facultyHeaders)
+    .send({
+      title: "T&P Test",
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      type: "Rated",
+      lifecycleState: "Published",
+      targetDepartment: null,
+      maxViolations: 3,
+      questions: [
+        {
+          id: "q_mcq_1",
+          type: "MCQ",
+          points: 10,
+          statement: "Which data structure follows the LIFO principle?",
+          options: ["Queue", "Stack", "Heap", "Tree"],
+          correctAnswer: "B",
+        },
+        {
+          id: "q_code_1",
+          type: "Coding",
+          points: 100,
+          problemTitle: "Sum Two Numbers",
+          difficulty: "Easy",
+          problemStatement: "Read two integers and print their sum.",
+          constraints: "1 <= a,b <= 10^9",
+          inputFormat: "Two integers",
+          outputFormat: "Their sum",
+          sampleTestCases: [{ input: "2 3", output: "5" }],
+          hiddenTestCases: [{ input: "10 20", output: "30" }],
+          timeLimitSeconds: 1,
+          memoryLimitMb: 256,
+          supportedLanguages: ["cpp", "java", "python"],
+        },
+      ],
+      ...overrides,
+    });
+
+  expect(response.status).toBe(201);
+  return response.body.contest;
+}
+
 describe("TCET Code Studio backend APIs", () => {
   it("auto-provisions users through mock auth and preserves the legacy profile route", async () => {
     const { app } = createTestApp();
@@ -53,6 +98,18 @@ describe("TCET Code Studio backend APIs", () => {
     expect(legacyProfileResponse.status).toBe(200);
     expect(legacyProfileResponse.body.email).toBe("faculty@tcetmumbai.in");
     expect(legacyProfileResponse.body.role).toBe("FACULTY");
+
+    const facultyStudentLookup = await request(app)
+      .get("/api/users/student1%40tcetmumbai.in")
+      .set(facultyHeaders);
+
+    expect(facultyStudentLookup.status).toBe(200);
+    expect(facultyStudentLookup.body.user.email).toBe("student1@tcetmumbai.in");
+
+    const forbiddenStudentLookup = await request(app)
+      .get("/api/users/student2%40tcetmumbai.in");
+
+    expect(forbiddenStudentLookup.status).toBe(403);
   });
 
   it("supports faculty problem workflows and redacts hidden cases from student detail responses", async () => {
@@ -92,7 +149,7 @@ describe("TCET Code Studio backend APIs", () => {
   });
 
   it("keeps sample runs non-persistent and awards rating only for the first accepted unique solve", async () => {
-    const { app } = createTestApp();
+    const { app, services } = createTestApp();
     const createdProblem = await createProblem(app);
 
     const runResponse = await request(app).post("/api/submissions/run").send({
@@ -114,9 +171,13 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(wrongAnswerResponse.status).toBe(201);
-    expect(wrongAnswerResponse.body.submission.status).toBe("WRONG_ANSWER");
-    expect(wrongAnswerResponse.body.submission.ratingAwarded).toBe(0);
+    expect(wrongAnswerResponse.status).toBe(202);
+    const wrongAnswerSubmission = await services.submissionService.processQueuedSubmission(
+      wrongAnswerResponse.body.submission_id,
+      "test-job-1",
+    );
+    expect(wrongAnswerSubmission.status).toBe("WRONG_ANSWER");
+    expect(wrongAnswerSubmission.ratingAwarded).toBe(0);
 
     const acceptedResponse = await request(app).post("/api/submissions").send({
       problemId: createdProblem.id,
@@ -124,9 +185,13 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(acceptedResponse.status).toBe(201);
-    expect(acceptedResponse.body.submission.status).toBe("ACCEPTED");
-    expect(acceptedResponse.body.submission.ratingAwarded).toBe(100);
+    expect(acceptedResponse.status).toBe(202);
+    const acceptedSubmission = await services.submissionService.processQueuedSubmission(
+      acceptedResponse.body.submission_id,
+      "test-job-2",
+    );
+    expect(acceptedSubmission.status).toBe("ACCEPTED");
+    expect(acceptedSubmission.ratingAwarded).toBe(100);
 
     const repeatedAcceptedResponse = await request(app).post("/api/submissions").send({
       problemId: createdProblem.id,
@@ -134,8 +199,12 @@ describe("TCET Code Studio backend APIs", () => {
       language: "python",
     });
 
-    expect(repeatedAcceptedResponse.status).toBe(201);
-    expect(repeatedAcceptedResponse.body.submission.ratingAwarded).toBe(0);
+    expect(repeatedAcceptedResponse.status).toBe(202);
+    const repeatedAcceptedSubmission = await services.submissionService.processQueuedSubmission(
+      repeatedAcceptedResponse.body.submission_id,
+      "test-job-3",
+    );
+    expect(repeatedAcceptedSubmission.ratingAwarded).toBe(0);
 
     const currentUserResponse = await request(app).get("/api/users/me");
     expect(currentUserResponse.status).toBe(200);
@@ -178,7 +247,7 @@ describe("TCET Code Studio backend APIs", () => {
   });
 
   it("excludes faculty from the leaderboard, breaks rating ties by accuracy, and scopes submissions correctly", async () => {
-    const { app } = createTestApp();
+    const { app, services } = createTestApp();
     const facultyProfileResponse = await request(app).get("/api/users/me").set(facultyHeaders);
     expect(facultyProfileResponse.status).toBe(200);
     expect(facultyProfileResponse.body.user.rank).toBeNull();
@@ -192,21 +261,24 @@ describe("TCET Code Studio backend APIs", () => {
       code: "accepted",
       language: "python",
     });
-    expect(firstStudentAcceptedOne.status).toBe(201);
+    expect(firstStudentAcceptedOne.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentAcceptedOne.body.submission_id, "test-job-4");
 
     const firstStudentAcceptedTwo = await request(app).post("/api/submissions").send({
       problemId: easyProblemTwo.id,
       code: "accepted",
       language: "python",
     });
-    expect(firstStudentAcceptedTwo.status).toBe(201);
+    expect(firstStudentAcceptedTwo.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentAcceptedTwo.body.submission_id, "test-job-5");
 
     const firstStudentWrongAnswer = await request(app).post("/api/submissions").send({
       problemId: easyProblemOne.id,
       code: "wrong_answer",
       language: "python",
     });
-    expect(firstStudentWrongAnswer.status).toBe(201);
+    expect(firstStudentWrongAnswer.status).toBe(202);
+    await services.submissionService.processQueuedSubmission(firstStudentWrongAnswer.body.submission_id, "test-job-6");
 
     const secondStudentHeaders = {
       "x-mock-email": "student2@tcetmumbai.in",
@@ -223,7 +295,11 @@ describe("TCET Code Studio backend APIs", () => {
         language: "python",
       });
 
-    expect(secondStudentSubmission.status).toBe(201);
+    expect(secondStudentSubmission.status).toBe(202);
+    const processedSecondStudentSubmission = await services.submissionService.processQueuedSubmission(
+      secondStudentSubmission.body.submission_id,
+      "test-job-7",
+    );
 
     const leaderboardResponse = await request(app).get("/api/leaderboard");
     expect(leaderboardResponse.status).toBe(200);
@@ -253,7 +329,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(facultySubmissionList.body.items[0].userEmail).toBe("student2@tcetmumbai.in");
 
     const forbiddenSubmissionDetail = await request(app).get(
-      `/api/submissions/${secondStudentSubmission.body.submission.id}`,
+      `/api/submissions/${processedSecondStudentSubmission.id}`,
     );
     expect(forbiddenSubmissionDetail.status).toBe(403);
 
@@ -262,5 +338,128 @@ describe("TCET Code Studio backend APIs", () => {
     expect(csvExportResponse.text).toContain("student2@tcetmumbai.in");
     expect(csvExportResponse.text).not.toContain("faculty1@tcetmumbai.in");
     expect(csvExportResponse.text).toContain("rating");
+  });
+
+  it("hides contest answers and standings from students until faculty publishes results", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:00:00.000Z",
+      duration: 30,
+      lifecycleState: "Published",
+    });
+
+    const contestListResponse = await request(app).get("/api/contests");
+    expect(contestListResponse.status).toBe(200);
+    expect(contestListResponse.body.items).toHaveLength(1);
+    expect(contestListResponse.body.items[0].computedStatus).toBe("Ended");
+
+    const studentQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(studentQuestionResponse.status).toBe(200);
+    expect(studentQuestionResponse.body.question.questionNumber).toBe(1);
+    expect(studentQuestionResponse.body.question.correctAnswer).toBeUndefined();
+
+    const codingQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_code_1`);
+    expect(codingQuestionResponse.status).toBe(200);
+    expect(codingQuestionResponse.body.question.questionNumber).toBe(2);
+    expect(codingQuestionResponse.body.question.hiddenTestCases).toBeUndefined();
+
+    const hiddenStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(hiddenStandingsResponse.status).toBe(403);
+
+    const facultyStandingsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/standings`)
+      .set(facultyHeaders);
+    expect(facultyStandingsResponse.status).toBe(200);
+
+    const publishResultsResponse = await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true });
+    expect(publishResultsResponse.status).toBe(200);
+    expect(publishResultsResponse.body.contest.resultsPublished).toBe(true);
+
+    const visibleStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(visibleStandingsResponse.status).toBe(200);
+  });
+
+  it("hides upcoming contest questions from students until the contest goes live", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T01:00:00.000Z",
+      duration: 60,
+      lifecycleState: "Published",
+    });
+
+    const detailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body.contest.computedStatus).toBe("Upcoming");
+    expect(detailResponse.body.contest.questions).toEqual([]);
+
+    const questionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(questionResponse.status).toBe(403);
+
+    const attemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(attemptResponse.status).toBe(409);
+  });
+
+  it("processes live contest attempts, contest coding runs, queued contest coding submits, and auto-submits on the third proctoring violation", async () => {
+    const { app, repositories, services } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+    });
+
+    const startAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(startAttemptResponse.status).toBe(201);
+    expect(startAttemptResponse.body.attempt.status).toBe("ACTIVE");
+
+    const answerResponse = await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "B" });
+    expect(answerResponse.status).toBe(200);
+    expect(answerResponse.body.attempt.score).toBe(10);
+
+    const runResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-run`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(runResponse.status).toBe(200);
+    expect(runResponse.body.result.status).toBe("ACCEPTED");
+    expect(runResponse.body.result.totalCount).toBe(1);
+
+    const submissionResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(submissionResponse.status).toBe(201);
+    expect(submissionResponse.body.status).toBe("QUEUED");
+
+    const persistedSubmission = await repositories.submissionRepository.getById(submissionResponse.body.submissionId);
+    expect(persistedSubmission?.sourceType).toBe("contest_coding");
+    expect(persistedSubmission?.contestId).toBe(contest.id);
+    expect(persistedSubmission?.status).toBe("QUEUED");
+
+    const processedContestSubmission = await services.submissionService.processQueuedSubmission(
+      submissionResponse.body.submissionId,
+      "contest-job-1",
+    );
+    expect(processedContestSubmission.status).toBe("ACCEPTED");
+
+    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "TAB_SWITCH" });
+    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "VISIBILITY_LOSS" });
+    const autoSubmitResponse = await request(app)
+      .post(`/api/contests/${contest.id}/proctor-events`)
+      .send({ type: "COPY" });
+    expect(autoSubmitResponse.status).toBe(200);
+    expect(autoSubmitResponse.body.attempt.status).toBe("AUTO_SUBMITTED");
+
+    const blockedAnswerResponse = await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "B" });
+    expect(blockedAnswerResponse.status).toBe(409);
+
+    const attemptsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/attempts`)
+      .set(facultyHeaders);
+    expect(attemptsResponse.status).toBe(200);
+    expect(attemptsResponse.body.items[0].violationCount).toBe(3);
   });
 });

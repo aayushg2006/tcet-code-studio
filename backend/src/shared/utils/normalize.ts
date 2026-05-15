@@ -1,4 +1,5 @@
 import {
+  DEPARTMENTS,
   DIFFICULTIES,
   EDITOR_ONLY_LANGUAGES,
   FINAL_SUBMISSION_STATUSES,
@@ -6,6 +7,7 @@ import {
   SUPPORTED_LANGUAGES,
 } from "../constants/domain";
 import type {
+  Department,
   Difficulty,
   EditorOnlyLanguage,
   ExecutableLanguage,
@@ -30,6 +32,45 @@ export function normalizeNumber(value: unknown, fallback = 0): number {
 
 export function normalizeRole(value: unknown): UserRole {
   return typeof value === "string" && value.toUpperCase() === "FACULTY" ? "FACULTY" : "STUDENT";
+}
+
+export function normalizeDepartment(value: unknown): Department | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const directMatch = DEPARTMENTS.find((department) => department === trimmed);
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const normalizedInput = trimmed.toLowerCase();
+  const aliasMap: Record<string, Department> = {
+    "ai&ds": "B.Tech – Artificial Intelligence & Data Science",
+    comp: "B.E. Computer Engineering",
+    it: "B.E. Information Technology",
+    extc: "B.E. Electronics & Tele-Communication",
+    ecs: "B.E. Electronics and Computer Science",
+    civil: "B.E. Civil Engineering",
+    mechanical: "B.E. Mechanical Engineering",
+    csbs: "B.E. Computer Science and Engineering (Cyber Security)",
+    "cyber security": "B.E. Computer Science and Engineering (Cyber Security)",
+    amm: "B.E. Mechanical and Mechatronics Engineering (Additive Manufacturing)",
+    aiml: "B.Tech – Artificial Intelligence & Machine Learning",
+    iot: "B.Tech – Internet of Things (IoT)",
+    "cse-iot": "B.Tech – Computer Science & Engineering (CSE-IOT)",
+  };
+
+  if (aliasMap[normalizedInput]) {
+    return aliasMap[normalizedInput];
+  }
+
+  return DEPARTMENTS.find((department) => department.toLowerCase() === normalizedInput) ?? null;
 }
 
 export function normalizeDifficulty(value: unknown): Difficulty {

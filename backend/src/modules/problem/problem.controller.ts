@@ -25,12 +25,12 @@ export function createProblemController(problemService: ProblemService) {
 
     async listManageProblems(req: Request, res: Response): Promise<void> {
       const query = manageProblemQuerySchema.parse(req.query);
-      const problems = await problemService.listManageProblems(query);
+      const problems = await problemService.listManageProblems(req.user!, query);
       res.json(problems);
     },
 
     async getManageProblemDetail(req: Request, res: Response): Promise<void> {
-      const problem = await problemService.getManageProblemDetail(String(req.params.problemId));
+      const problem = await problemService.getManageProblemDetail(req.user!, String(req.params.problemId));
       res.json({ problem });
     },
 
@@ -42,13 +42,13 @@ export function createProblemController(problemService: ProblemService) {
 
     async updateProblem(req: Request, res: Response): Promise<void> {
       const payload = toCanonicalProblemUpdatePayload(updateProblemSchema.parse(req.body));
-      const problem = await problemService.updateProblem(String(req.params.problemId), payload);
+      const problem = await problemService.updateProblem(req.user!, String(req.params.problemId), payload);
       res.json({ problem });
     },
 
     async updateProblemState(req: Request, res: Response): Promise<void> {
       const payload = problemStateSchema.parse(req.body);
-      const problem = await problemService.updateProblemState(String(req.params.problemId), payload.lifecycleState);
+      const problem = await problemService.updateProblemState(req.user!, String(req.params.problemId), payload.lifecycleState);
       res.json({ problem });
     },
   };

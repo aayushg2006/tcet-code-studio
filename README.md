@@ -1,303 +1,230 @@
 # TCET Code Studio
 
-TCET Code Studio is a LeetCode-style coding platform for TCET, designed to integrate with the TCET Centre of Excellence portal.
+TCET Code Studio is a role-based coding platform with a React frontend, an Express backend, Firebase/Firestore persistence, and a local mock SSO server for development.
 
-This repository currently contains:
-- `frontend/` - React + Vite + TypeScript client
-- `backend/` - Express + TypeScript API server
-- Firebase Firestore integration for persistence
+## Current System Overview
 
-## Backend Status
+This repo contains:
 
-The Phase 1 and Phase 2 backend API work is implemented and tested.
+- `frontend/` - React + Vite + TypeScript app (default: `http://localhost:5173`)
+- `backend/` - Express + TypeScript API (default: `http://localhost:3001`)
+- `mock-sso-server.js` - local SSO simulator (default: `http://localhost:4000`)
 
-Key backend capabilities:
-- mock-auth and JWT-ready auth middleware
-- user auto-provisioning on first authenticated request
-- faculty problem management APIs
-- student problem discovery and detail APIs
-- sample code run endpoint with a safe stub execution provider
-- judged submission flow with rating updates
-- materialized rating-based leaderboard
+Key implemented behavior:
 
-Leaderboard behavior:
-- only `STUDENT` users appear in leaderboard results
-- ranking order is `rating desc`, then `accuracy desc`, then `problemsSolved desc`, then `email asc`
+- cookie-based SSO auth (`coe_shared_token`)
+- backend SSO callback route: `GET /api/auth/sso/callback`
+- role-based redirect after login:
+  - `STUDENT` -> `/student/dashboard`
+  - `FACULTY` -> `/faculty/dashboard`
+- automatic user provisioning in Firestore on first authenticated request
+- role-based route protection across backend APIs
+- role-based UI routing in frontend (manual role switch removed)
 
-## Tech Stack
+## Authentication Flow (Current)
 
-### Frontend
-- React 18
-- Vite
-- TypeScript
-- Tailwind-based UI stack
+1. User opens frontend and clicks sign-in.
+2. Frontend sends user to `mock-sso-server` login page.
+3. Mock SSO sets `coe_shared_token` cookie and redirects to backend callback.
+4. Backend callback validates JWT cookie, sets `req.user`, auto-creates user if missing, then redirects to the role dashboard.
+5. Frontend calls APIs using `credentials: include`.
 
-### Backend
-- Node.js
-- Express
-- TypeScript
-- Firebase Admin SDK / Firestore
-- Zod validation
-- Vitest + Supertest
+Important notes:
 
-## Project Structure
+- Keep host consistent (`localhost` everywhere, or `127.0.0.1` everywhere).
+- If mixed, browser cookie scope can break and cause login loops.
 
-```text
-tcet-code-studio/
-+-- frontend/
-+-- backend/
-|   +-- src/
-|   |   +-- app.ts
-|   |   +-- server.ts
-|   |   +-- seed.ts
-|   |   +-- bootstrap/
-|   |   +-- config/
-|   |   +-- execution/
-|   |   +-- middleware/
-|   |   +-- modules/
-|   |   |   +-- user/
-|   |   |   +-- problem/
-|   |   |   +-- submission/
-|   |   |   +-- leaderboard/
-|   |   +-- shared/
-|   |   +-- test/
-|   +-- .env.example
-|   +-- package.json
-|   +-- tsconfig.json
-+-- .gitignore
-+-- README.md
-```
+## Role Rules
 
-Each backend domain is split into separate files for route, controller, service, repository, model, and validation logic.
+- `STUDENT`
+  - can submit solutions: `POST /api/submissions`
+  - appears on leaderboard
+- `FACULTY`
+  - can manage problems and export leaderboard
+  - cannot submit on student submission endpoint
 
 ## Prerequisites
 
 - Node.js 18+
 - npm
-- Firebase service account JSON for Firestore access
+- Firebase Admin service account key (JSON)
 
-## Backend Setup
+## Quick Start
 
-### 1. Install backend dependencies
+### 1. Backend
 
 ```bash
 cd backend
 npm install
 ```
 
-### 2. Configure environment variables
+Create `backend/.env` and set at least:
 
-Copy the example file:
-
-```bash
-copy .env.example .env
+```env
+NODE_ENV=development
+PORT=3001
+CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+COE_SHARED_TOKEN_SECRET=local_dev_secret_key_123
+FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-key.json
 ```
 
-Update values as needed in `backend/.env`.
-
-### 3. Add Firebase service account key
-
-Place the Firebase Admin service account file at:
+Place Firebase key at:
 
 ```text
 backend/firebase-key.json
 ```
 
-This file is ignored by git and should never be committed.
+Run backend:
 
-### 4. Seed sample data
+```bash
+npm run dev
+```
+
+Optional seed:
 
 ```bash
 npm run seed
 ```
 
-### 5. Start the backend
-
-```bash
-npm run dev
-```
-
-Default backend URL:
-
-```text
-http://localhost:3000
-```
-
-## Frontend Setup
+### 2. Frontend
 
 ```bash
 cd frontend
 npm install
+```
+
+Create `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:3001
+```
+
+Run frontend:
+
+```bash
 npm run dev
 ```
 
-Default frontend URL:
+### 3. Mock SSO server
 
-```text
-http://localhost:5173
+From repo root:
+
+```bash
+node mock-sso-server.js
 ```
 
-## Backend Scripts
-
-Run these inside `backend/`:
-
-- `npm run dev` - start the backend with `ts-node-dev`
-- `npm run build` - compile TypeScript into `dist/`
-- `npm start` - run the compiled backend
-- `npm run typecheck` - run TypeScript type checks
-- `npm test` - run API tests with Vitest
-- `npm run test:watch` - run tests in watch mode
-- `npm run seed` - seed Firestore with sample data
-
-## Frontend Scripts
-
-Run these inside `frontend/`:
-
-- `npm run dev` - start Vite dev server
-- `npm run build` - create production build
-- `npm run build:dev` - create development-mode build
-- `npm run preview` - preview built frontend
-- `npm run lint` - run ESLint
-- `npm run test` - run frontend tests
-- `npm run test:watch` - run frontend tests in watch mode
-
-## Environment Variables
-
-The backend reads configuration from `backend/.env`.
-
-Important variables:
-
-- `PORT` - backend port
-- `CORS_ORIGIN` - allowed frontend origin(s), comma-separated if needed
-- `AUTH_MODE` - `mock` or `jwt`
-- `COE_SHARED_TOKEN_SECRET` - JWT secret for COE shared token verification
-- `FIREBASE_SERVICE_ACCOUNT_PATH` - path to Firebase service account file
-- `FIRESTORE_TEST_COLLECTION` - collection used by `/test-db`
-- `EXECUTION_PROVIDER` - currently `stub`
-- `MOCK_AUTH_DEFAULT_EMAIL`
-- `MOCK_AUTH_DEFAULT_ROLE`
-- `MOCK_AUTH_DEFAULT_NAME`
-- `MOCK_AUTH_DEFAULT_UID`
-- `MOCK_AUTH_DEFAULT_DEPARTMENT`
-- `DEFAULT_PROBLEM_TIME_LIMIT_SECONDS`
-- `DEFAULT_PROBLEM_MEMORY_LIMIT_MB`
-- `RATING_POINTS_EASY`
-- `RATING_POINTS_MEDIUM`
-- `RATING_POINTS_HARD`
-
-Reference template: `backend/.env.example`
-
-## Authentication
-
-### Mock mode
-
-For development, the backend defaults to:
+Default URL:
 
 ```text
-AUTH_MODE=mock
+http://localhost:4000
 ```
 
-In mock mode, routes can be tested using request headers such as:
+## Runtime Ports
 
-- `x-mock-role`
-- `x-mock-email`
-- `x-mock-name`
-- `x-mock-uid`
-- `x-mock-department`
+- Frontend: `5173`
+- Backend API: `3001`
+- Mock SSO: `4000`
 
-Example student headers:
+## API Highlights
 
-```text
-x-mock-role: STUDENT
-x-mock-email: student1@tcetmumbai.in
-x-mock-name: Student One
-```
+### Auth and Session
 
-Example faculty headers:
+- `GET /api/auth/sso/callback` - validates cookie and redirects by role
+- `GET /api/logout` - clears SSO cookie via mock SSO logout redirect
 
-```text
-x-mock-role: FACULTY
-x-mock-email: faculty1@tcetmumbai.in
-x-mock-name: Prof. Mehta
-```
+### Health
 
-### JWT mode
+- `GET /`
+- `GET /health`
+- `GET /test-db`
 
-For portal integration:
-
-```text
-AUTH_MODE=jwt
-```
-
-In JWT mode, the backend reads the `coe_shared_token` cookie and verifies it using `COE_SHARED_TOKEN_SECRET`.
-
-## Health Endpoints
-
-- `GET /` - basic service status
-- `GET /health` - simple health response
-- `GET /test-db` - Firestore connectivity check
-
-## API Overview
-
-### User
+### Users
 
 - `GET /api/users/me`
-- `GET /api/user/profile` - legacy compatibility route
+- `GET /api/user/profile` (legacy compatibility)
+- `GET /api/users/:email` (faculty only)
 
 ### Problems
 
 - `GET /api/problems`
 - `GET /api/problems/:problemId`
-- `GET /api/problems/manage` - faculty only
-- `GET /api/problems/manage/:problemId` - faculty only
-- `POST /api/problems` - faculty only
-- `PATCH /api/problems/:problemId` - faculty only
-- `PATCH /api/problems/:problemId/state` - faculty only
+- `GET /api/problems/manage` (faculty only)
+- `GET /api/problems/manage/:problemId` (faculty only)
+- `POST /api/problems` (faculty only)
+- `PATCH /api/problems/:problemId` (faculty only)
+- `PATCH /api/problems/:problemId/state` (faculty only)
 
 ### Submissions
 
-- `POST /api/submissions/run`
-- `POST /api/submissions` - student only
+- `POST /api/submissions/run` (non-persistent test run)
+- `POST /api/submissions` (student only, queued + judged)
 - `GET /api/submissions`
 - `GET /api/submissions/:submissionId`
 
 ### Leaderboard
 
 - `GET /api/leaderboard`
-- `GET /api/leaderboard/export` - faculty only
+- `GET /api/leaderboard/export` (faculty only)
 
-## Submission and Rating Rules
+## User Auto-Provisioning
 
-- `/api/submissions/run` is a non-persistent sample run endpoint
-- `/api/submissions` creates a judged submission
-- judged submissions never execute code directly on the backend server
-- current execution uses a safe stub provider
-- rating is awarded only for the first accepted unique solve of a problem
-- default rating weights are:
-  - Easy: `100`
-  - Medium: `200`
-  - Hard: `300`
+Users are automatically created/updated when authenticated requests hit protected routes.
 
-## Testing Notes
+Provisioned fields include:
 
-- Use a fresh Thunder Client request for `GET` endpoints and keep the body empty
-- For faculty-only problem APIs, use faculty mock headers
-- For student submissions, use student mock headers
-- If Firestore rejects `undefined` inside problem test cases, ensure each testcase includes a string `explanation`, even if it is empty
+- email
+- role
+- uid/name/department (if present in token)
+- stats defaults (`rating`, `score`, `problemsSolved`, etc.)
 
-## Verified Backend Commands
+## Scripts
 
-These commands were used successfully on this version of the backend:
+### Backend (`backend/`)
 
-```bash
-cd backend
-npm run typecheck
-npm test
-npm run build
-```
+- `npm run dev`
+- `npm run dev:worker`
+- `npm run build`
+- `npm run start`
+- `npm run start:worker`
+- `npm run typecheck`
+- `npm run test`
+- `npm run test:watch`
+- `npm run seed`
+- `npm run loadtest:queue`
+
+### Frontend (`frontend/`)
+
+- `npm run dev`
+- `npm run build`
+- `npm run build:dev`
+- `npm run preview`
+- `npm run lint`
+- `npm run test`
+- `npm run test:watch`
+
+## Troubleshooting
+
+### Login loop between frontend and SSO
+
+- Use same host across services (`localhost` recommended).
+- Clear old cookies for both `localhost` and `127.0.0.1`.
+- Restart frontend, backend, and mock SSO server.
+
+### "You are not allowed to access this resource" on submit
+
+- Submit endpoint is `STUDENT` only.
+- Sign in with `STUDENT` role in mock SSO.
+
+### "Failed to fetch"
+
+- Confirm frontend points to backend `3001`.
+- Ensure backend CORS includes your frontend origin.
+- Ensure all three processes are running.
 
 ## Security Notes
 
-- do not commit `backend/.env`
-- do not commit `backend/firebase-key.json`
-- do not commit any production JWT secret or service account file
+- Never commit secrets or credentials.
+- Keep these files private:
+  - `backend/.env`
+  - `backend/firebase-key.json`
+- Temporary debug files are ignored by pattern `tmp-*.txt`.

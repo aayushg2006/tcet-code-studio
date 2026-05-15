@@ -1,12 +1,18 @@
 import { z } from "zod";
 import {
+  DEPARTMENTS,
   DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
   DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
   DIFFICULTIES,
   PROBLEM_LIFECYCLE_STATES,
 } from "../../shared/constants/domain";
-import { normalizeDifficulty, normalizeProblemLifecycleState, normalizeNumber } from "../../shared/utils/normalize";
-import type { Difficulty, ProblemLifecycleState } from "../../shared/types/domain";
+import {
+  normalizeDepartment,
+  normalizeDifficulty,
+  normalizeProblemLifecycleState,
+  normalizeNumber,
+} from "../../shared/utils/normalize";
+import type { Department, Difficulty, ProblemLifecycleState } from "../../shared/types/domain";
 import type { ProblemTestCase } from "./problem.model";
 
 const testCaseSchema = z.object({
@@ -42,6 +48,7 @@ const constraintsSchema = z
   );
 
 const numberSchema = z.union([z.number(), z.string().min(1)]).transform((value) => normalizeNumber(value, 0));
+const departmentSchema = z.enum(DEPARTMENTS);
 
 const problemWriteBaseSchema = z.object({
   title: z.string().min(3).max(150),
@@ -56,6 +63,7 @@ const problemWriteBaseSchema = z.object({
   memoryLimitMb: numberSchema.optional(),
   memoryLimit: numberSchema.optional(),
   lifecycleState: z.enum(["Draft", "Published", "Archived"]).optional(),
+  targetDepartment: z.union([departmentSchema, z.null()]).optional(),
   sampleTestCases: z.array(testCaseSchema).optional(),
   hiddenTestCases: z.array(testCaseSchema).optional(),
   examples: z.array(exampleSchema).optional(),
@@ -97,6 +105,25 @@ export const manageProblemQuerySchema = studentProblemQuerySchema.extend({
     .string()
     .optional()
     .transform((value) => (value ? normalizeProblemLifecycleState(value) : undefined)),
+  targetDepartment: z
+    .union([departmentSchema, z.string()])
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value === "") {
+        return undefined;
+      }
+
+      const normalized = normalizeDepartment(value);
+      if (!normalized) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid department",
+        });
+        return z.NEVER;
+      }
+
+      return normalized;
+    }),
 });
 
 export interface CanonicalProblemPayload {
@@ -110,6 +137,7 @@ export interface CanonicalProblemPayload {
   timeLimitSeconds: number;
   memoryLimitMb: number;
   lifecycleState: ProblemLifecycleState;
+  targetDepartment: Department | null;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
 }
@@ -140,6 +168,7 @@ export function toCanonicalProblemPayload(raw: z.infer<typeof createProblemSchem
     timeLimitSeconds: normalizeNumber(raw.timeLimitSeconds ?? raw.timeLimit, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS),
     memoryLimitMb: normalizeNumber(raw.memoryLimitMb ?? raw.memoryLimit, DEFAULT_PROBLEM_MEMORY_LIMIT_MB),
     lifecycleState: normalizeProblemLifecycleState(raw.lifecycleState ?? "Draft"),
+    targetDepartment: normalizeDepartment(raw.targetDepartment) ?? null,
     sampleTestCases: raw.sampleTestCases ?? exampleSplit.sampleTestCases,
     hiddenTestCases: raw.hiddenTestCases ?? exampleSplit.hiddenTestCases,
   };
@@ -171,6 +200,9 @@ export function toCanonicalProblemUpdatePayload(
     );
   }
   if (raw.lifecycleState !== undefined) payload.lifecycleState = normalizeProblemLifecycleState(raw.lifecycleState);
+  if (raw.targetDepartment !== undefined) {
+    payload.targetDepartment = raw.targetDepartment === null ? null : normalizeDepartment(raw.targetDepartment);
+  }
   if (raw.sampleTestCases !== undefined || raw.examples !== undefined) {
     payload.sampleTestCases = raw.sampleTestCases ?? exampleSplit.sampleTestCases;
   }

@@ -1,5 +1,15 @@
 import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
+import type {
+  ContestAttemptRecord,
+  ContestProctoringEventRecord,
+  ContestRecord,
+} from "../../modules/contest/contest.model";
+import type {
+  ContestAttemptRepository,
+  ContestProctoringRepository,
+  ContestRepository,
+} from "../../modules/contest/contest.repository";
 import type { ProblemRecord } from "../../modules/problem/problem.model";
 import type { ProblemRepository } from "../../modules/problem/problem.repository";
 import type { SubmissionRecord } from "../../modules/submission/submission.model";
@@ -40,6 +50,59 @@ function cloneSubmission(submission: SubmissionRecord): SubmissionRecord {
     updatedAt: new Date(submission.updatedAt.getTime()),
     judgedAt: cloneDate(submission.judgedAt),
     finalizationAppliedAt: cloneDate(submission.finalizationAppliedAt),
+  };
+}
+
+function cloneContest(contest: ContestRecord): ContestRecord {
+  return {
+    ...contest,
+    questions: contest.questions.map((question) => {
+      if (question.type === "Coding") {
+        return {
+          ...question,
+          sampleTestCases: question.sampleTestCases.map((testCase) => ({ ...testCase })),
+          hiddenTestCases: question.hiddenTestCases.map((testCase) => ({ ...testCase })),
+          supportedLanguages: [...question.supportedLanguages],
+        };
+      }
+
+      if (question.type === "MSQ") {
+        return {
+          ...question,
+          options: [...question.options],
+          correctAnswers: [...question.correctAnswers],
+        };
+      }
+
+      return {
+        ...question,
+        options: [...question.options],
+      };
+    }),
+    createdAt: new Date(contest.createdAt.getTime()),
+    updatedAt: new Date(contest.updatedAt.getTime()),
+  };
+}
+
+function cloneContestAttempt(attempt: ContestAttemptRecord): ContestAttemptRecord {
+  return {
+    ...attempt,
+    questionStates: attempt.questionStates.map((state) => ({
+      ...state,
+      solvedAt: cloneDate(state.solvedAt),
+    })),
+    startedAt: new Date(attempt.startedAt.getTime()),
+    updatedAt: new Date(attempt.updatedAt.getTime()),
+    submittedAt: cloneDate(attempt.submittedAt),
+    autoSubmittedAt: cloneDate(attempt.autoSubmittedAt),
+    lastSolvedAt: cloneDate(attempt.lastSolvedAt),
+  };
+}
+
+function cloneProctoringEvent(event: ContestProctoringEventRecord): ContestProctoringEventRecord {
+  return {
+    ...event,
+    createdAt: new Date(event.createdAt.getTime()),
   };
 }
 
@@ -118,6 +181,13 @@ export class InMemorySubmissionRepository implements SubmissionRepository {
     return Array.from(this.submissions.values())
       .filter((submission) => (filters.userEmail ? submission.userEmail === filters.userEmail : true))
       .filter((submission) => (filters.problemId ? submission.problemId === filters.problemId : true))
+      .filter((submission) =>
+        filters.resourceOwnerEmail ? submission.resourceOwnerEmail === filters.resourceOwnerEmail : true,
+      )
+      .filter((submission) =>
+        filters.userDepartment ? submission.userDepartment === filters.userDepartment : true,
+      )
+      .filter((submission) => (filters.contestId ? submission.contestId === filters.contestId : true))
       .filter((submission) => (filters.status ? submission.status === filters.status : true))
       .filter((submission) => (filters.language ? submission.language === filters.language : true))
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
@@ -142,7 +212,83 @@ export class InMemoryLeaderboardRepository implements LeaderboardRepository {
     return cloneLeaderboardEntry(entry);
   }
 
+  async delete(email: string): Promise<void> {
+    this.entries.delete(email);
+  }
+
   async list(): Promise<LeaderboardEntry[]> {
     return Array.from(this.entries.values()).map(cloneLeaderboardEntry);
+  }
+}
+
+export class InMemoryContestRepository implements ContestRepository {
+  private readonly contests = new Map<string, ContestRecord>();
+
+  constructor(seed: ContestRecord[] = []) {
+    seed.forEach((contest) => this.contests.set(contest.id, cloneContest(contest)));
+  }
+
+  async getById(contestId: string): Promise<ContestRecord | null> {
+    const contest = this.contests.get(contestId);
+    return contest ? cloneContest(contest) : null;
+  }
+
+  async save(contest: ContestRecord): Promise<ContestRecord> {
+    this.contests.set(contest.id, cloneContest(contest));
+    return cloneContest(contest);
+  }
+
+  async list(): Promise<ContestRecord[]> {
+    return Array.from(this.contests.values()).map(cloneContest);
+  }
+}
+
+export class InMemoryContestAttemptRepository implements ContestAttemptRepository {
+  private readonly attempts = new Map<string, ContestAttemptRecord>();
+
+  constructor(seed: ContestAttemptRecord[] = []) {
+    seed.forEach((attempt) => this.attempts.set(attempt.id, cloneContestAttempt(attempt)));
+  }
+
+  async getById(attemptId: string): Promise<ContestAttemptRecord | null> {
+    const attempt = this.attempts.get(attemptId);
+    return attempt ? cloneContestAttempt(attempt) : null;
+  }
+
+  async getByContestAndUser(contestId: string, userEmail: string): Promise<ContestAttemptRecord | null> {
+    const attempt = Array.from(this.attempts.values()).find(
+      (entry) => entry.contestId === contestId && entry.userEmail === userEmail,
+    );
+    return attempt ? cloneContestAttempt(attempt) : null;
+  }
+
+  async save(attempt: ContestAttemptRecord): Promise<ContestAttemptRecord> {
+    this.attempts.set(attempt.id, cloneContestAttempt(attempt));
+    return cloneContestAttempt(attempt);
+  }
+
+  async listByContest(contestId: string): Promise<ContestAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.contestId === contestId)
+      .map(cloneContestAttempt);
+  }
+}
+
+export class InMemoryContestProctoringRepository implements ContestProctoringRepository {
+  private readonly events = new Map<string, ContestProctoringEventRecord>();
+
+  constructor(seed: ContestProctoringEventRecord[] = []) {
+    seed.forEach((event) => this.events.set(event.id, cloneProctoringEvent(event)));
+  }
+
+  async create(event: ContestProctoringEventRecord): Promise<ContestProctoringEventRecord> {
+    this.events.set(event.id, cloneProctoringEvent(event));
+    return cloneProctoringEvent(event);
+  }
+
+  async listByAttempt(attemptId: string): Promise<ContestProctoringEventRecord[]> {
+    return Array.from(this.events.values())
+      .filter((event) => event.attemptId === attemptId)
+      .map(cloneProctoringEvent);
   }
 }

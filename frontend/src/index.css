@@ -14,7 +14,7 @@
     --popover: 40 40% 99%;
     --popover-foreground: 220 60% 15%;
 
-    --primary: 220 70% 22%;
+    --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 40 33% 97%;
 
     --secondary: 40 30% 92%;
@@ -58,7 +58,7 @@
     --popover: 220 45% 12%;
     --popover-foreground: 40 30% 95%;
 
-    --primary: 25 95% 55%;
+    --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 220 60% 10%;
 
     --secondary: 220 40% 18%;
@@ -95,6 +95,7 @@
   * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
   }
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }

@@ -1,10 +1,40 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { GraduationCap, Briefcase, Code2, Trophy, BookOpen, Sparkles } from "lucide-react";
+import { Code2, Trophy, BookOpen, Sparkles, LogIn } from "lucide-react";
+import { userApi } from "@/api/services";
+import { getApiBaseUrl } from "@/api/client";
+import { getHomePathForRole } from "@/lib/role-routing";
+
+function getMockSsoLoginUrl(): string {
+  if (typeof window === "undefined") {
+    return "http://localhost:4000/login?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fsso%2Fcallback%3FfrontendOrigin%3Dhttp%253A%252F%252Flocalhost%253A5173";
+  }
+
+  const host = window.location.hostname || "localhost";
+  const backendBaseUrl = getApiBaseUrl();
+  const frontendOrigin = window.location.origin;
+  const callbackUrl = encodeURIComponent(
+    `${backendBaseUrl}/api/auth/sso/callback?frontendOrigin=${encodeURIComponent(frontendOrigin)}`,
+  );
+
+  return `${window.location.protocol}//${host}:4000/login?callbackUrl=${callbackUrl}`;
+}
 
 export default function Index() {
+  const userQuery = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => userApi.me("/", { suppressAuthRedirect: true }),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  if (userQuery.data?.user.role) {
+    return <Navigate to={getHomePathForRole(userQuery.data.user.role)} replace />;
+  }
+
   return (
     <AppLayout>
       {/* Hero */}
@@ -18,9 +48,12 @@ export default function Index() {
           <p className="mt-5 text-lg md:text-xl text-primary-foreground/80 dark:text-muted-foreground max-w-2xl mx-auto">
             Where TCET students sharpen their craft and faculty cultivate the next generation of engineers.
           </p>
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to="/student/dashboard"><Button size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold w-56"><GraduationCap className="h-5 w-5 mr-2" /> Enter as Student</Button></Link>
-            <Link to="/faculty/dashboard"><Button size="lg" variant="outline" className="border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 dark:text-foreground dark:border-border dark:hover:bg-secondary w-56"><Briefcase className="h-5 w-5 mr-2" /> Enter as Faculty</Button></Link>
+          <div className="mt-8 flex items-center justify-center">
+            <a href={getMockSsoLoginUrl()}>
+              <Button size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold w-64">
+                <LogIn className="h-5 w-5 mr-2" /> Sign in with CoE SSO
+              </Button>
+            </a>
           </div>
         </div>
       </section>
@@ -53,7 +86,11 @@ export default function Index() {
           <Sparkles className="h-8 w-8 text-accent mx-auto" />
           <h2 className="font-display text-3xl md:text-4xl font-bold mt-3">Begin your journey today.</h2>
           <p className="text-primary-foreground/80 dark:text-muted-foreground mt-2 max-w-xl mx-auto">Join hundreds of TCET students already building their problem-solving muscle.</p>
-          <Link to="/student/problems"><Button size="lg" className="mt-6 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold">Browse Problems</Button></Link>
+          <a href={getMockSsoLoginUrl()}>
+            <Button size="lg" className="mt-6 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold">
+              Continue to Platform
+            </Button>
+          </a>
         </Card>
       </section>
     </AppLayout>

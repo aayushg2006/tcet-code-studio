@@ -71,6 +71,24 @@ class Solution {
     expect(wrapped).toContain("import java.util.*;");
   });
 
+  it("renames Java classes with an existing main method to Main so Judge0 can compile them", () => {
+    const source = `
+import java.util.*;
+
+public class Solution {
+    public static void main(String[] args) {
+        System.out.println("ok");
+    }
+}
+`;
+
+    const wrapped = wrapSubmissionCode("java", source);
+
+    expect(wrapped).toContain("public class Main");
+    expect(wrapped).not.toContain("public class Solution");
+    expect(wrapped).toContain('System.out.println("ok");');
+  });
+
   it("appends Python execution boilerplate for Solution classes", () => {
     const source = `
 class Solution:
@@ -99,6 +117,24 @@ class Solution {
 
     expect(wrapped).toContain("const sol = new Solution();");
     expect(wrapped).toContain("const result = await sol.solve();");
+    expect(wrapped).toContain("process.stdout.write(__tcetFormatValue(result));");
+  });
+
+  it("prepares TypeScript Solution classes for Judge0's Node runtime", () => {
+    const source = `
+class Solution {
+  solve(): number[] {
+    return [1, 2, 3];
+  }
+}
+`;
+
+    const wrapped = wrapSubmissionCode("typescript", source);
+
+    expect(wrapped).toContain("declare function require");
+    expect(wrapped).toContain("declare const Promise");
+    expect(wrapped).toContain("declare const process");
+    expect(wrapped).toContain("const sol = new Solution();");
     expect(wrapped).toContain("process.stdout.write(__tcetFormatValue(result));");
   });
 });

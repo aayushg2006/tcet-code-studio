@@ -1,5 +1,10 @@
 import type { UserRole } from "../../shared/types/auth";
-import type { Difficulty, ProblemLifecycleState, StudentProblemStatus } from "../../shared/types/domain";
+import type {
+  Department,
+  Difficulty,
+  ProblemLifecycleState,
+  StudentProblemStatus,
+} from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 
 export interface ProblemTestCase {
@@ -20,6 +25,7 @@ export interface ProblemRecord {
   timeLimitSeconds: number;
   memoryLimitMb: number;
   lifecycleState: ProblemLifecycleState;
+  targetDepartment: Department | null;
   createdBy: string;
   createdByRole: UserRole;
   totalSubmissions: number;
@@ -45,6 +51,7 @@ export interface StudentProblemSummaryResponse {
   timeLimitSeconds: number;
   memoryLimit: string;
   memoryLimitMb: number;
+  targetDepartment: Department | null;
 }
 
 export interface StudentProblemDetailResponse extends StudentProblemSummaryResponse {
@@ -74,6 +81,7 @@ export interface ManageProblemDetailResponse extends ManageProblemSummaryRespons
   constraints: string[];
   timeLimitSeconds: number;
   memoryLimitMb: number;
+  targetDepartment: Department | null;
   createdBy: string;
   createdByRole: UserRole;
   sampleTestCases: ProblemTestCase[];
@@ -99,6 +107,7 @@ export function toStudentProblemSummary(
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimit: String(problem.memoryLimitMb),
     memoryLimitMb: problem.memoryLimitMb,
+    targetDepartment: problem.targetDepartment,
   };
 }
 
@@ -142,6 +151,7 @@ export function toManageProblemDetail(problem: ProblemRecord): ManageProblemDeta
     constraints: problem.constraints,
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
+    targetDepartment: problem.targetDepartment,
     createdBy: problem.createdBy,
     createdByRole: problem.createdByRole,
     sampleTestCases: problem.sampleTestCases,
