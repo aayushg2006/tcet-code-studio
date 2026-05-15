@@ -4,9 +4,25 @@ import { requireRole } from "../../middleware/require-role";
 import { asyncHandler } from "../../shared/middleware/async-handler";
 import { createUserController } from "./user.controller";
 
+export function createAuthRouter(dependencies: ApplicationDependencies): Router {
+  const router = Router();
+  const controller = createUserController({
+    userService: dependencies.userService,
+    userRepository: dependencies.userRepository,
+  });
+
+  router.get("/sso/callback", asyncHandler(controller.handleSsoCallback));
+  router.post("/sso/callback", asyncHandler(controller.handleSsoCallback));
+
+  return router;
+}
+
 export function createUserRouter(dependencies: ApplicationDependencies): Router {
   const router = Router();
-  const controller = createUserController(dependencies.userService);
+  const controller = createUserController({
+    userService: dependencies.userService,
+    userRepository: dependencies.userRepository,
+  });
 
   router.use(dependencies.authMiddleware);
   router.get("/me", asyncHandler(controller.getCurrentUser));
@@ -20,7 +36,10 @@ export function createUserRouter(dependencies: ApplicationDependencies): Router 
 
 export function createLegacyUserRouter(dependencies: ApplicationDependencies): Router {
   const router = Router();
-  const controller = createUserController(dependencies.userService);
+  const controller = createUserController({
+    userService: dependencies.userService,
+    userRepository: dependencies.userRepository,
+  });
 
   router.use(dependencies.authMiddleware);
   router.get("/profile", asyncHandler(controller.getLegacyProfile));

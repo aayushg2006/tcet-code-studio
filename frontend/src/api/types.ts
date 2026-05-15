@@ -99,6 +99,7 @@ export interface UserEnvelope {
 export type CompleteProfilePayload =
   | {
       name: string;
+      uid: string;
       rollNumber: string;
       department: Department;
       semester: number;

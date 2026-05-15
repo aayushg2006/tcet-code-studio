@@ -24,8 +24,18 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   AUTH_MODE: z.enum(["mock", "jwt"]).default("mock"),
-  COE_SHARED_TOKEN_SECRET: z.string().min(1).default("SECRET_FROM_COE"),
-  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().min(1).default("./firebase-key.json"),
+  COE_AUTH_BASE_URL: z.string().min(1).default("http://127.0.0.1:4000"),
+  COE_SHARED_TOKEN_SECRET: z
+    .string()
+    .trim()
+    .min(16, "COE_SHARED_TOKEN_SECRET must be at least 16 characters long.")
+    .max(512)
+    .default("SECRET_FROM_COE_2026"),
+  FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS: z
+    .unknown()
+    .transform((value) => parseBoolean(value, false)),
+  FIREBASE_PROJECT_ID: z.string().optional().transform((value) => value?.trim() ?? ""),
+  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional().transform((value) => value?.trim() ?? "./firebase-key.json"),
   FIRESTORE_TEST_COLLECTION: z.string().min(1).default("test"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
   EXECUTION_PROVIDER: z.enum(["stub", "judge0"]).default("stub"),
@@ -39,7 +49,7 @@ const envSchema = z.object({
   REDIS_DB: z.coerce.number().int().nonnegative().default(0),
   REDIS_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
   SUBMISSION_QUEUE_NAME: z.string().min(1).default("tcet-code-submissions"),
-  SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(8),
   SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
   EMBED_SUBMISSION_WORKER: z
     .unknown()
@@ -63,5 +73,7 @@ export const env = {
   corsOrigins: parsedEnv.CORS_ORIGIN.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-  firebaseServiceAccountPath: path.resolve(process.cwd(), parsedEnv.FIREBASE_SERVICE_ACCOUNT_PATH),
+  firebaseServiceAccountPath: parsedEnv.FIREBASE_SERVICE_ACCOUNT_PATH
+    ? path.resolve(process.cwd(), parsedEnv.FIREBASE_SERVICE_ACCOUNT_PATH)
+    : "",
 } as const;

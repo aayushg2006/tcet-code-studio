@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import { env } from "../config/env";
 import { db } from "../firebase";
 import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
-import { authMiddleware } from "../middleware/auth";
+import { createAuthMiddleware } from "../middleware/auth";
 import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
 import {
   FirestoreContestAttemptRepository,
@@ -52,6 +52,7 @@ export interface ServiceBundle {
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
+  userRepository: UserRepository;
   authMiddleware: RequestHandler;
   profileCompletionMiddleware: RequestHandler;
   databaseHealthcheck?: () => Promise<void>;
@@ -82,6 +83,8 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
 export function createApplicationDependencies(overrides: DependencyOverrides = {}): ApplicationDependencies {
   const repositories = createRepositories(overrides.repositories);
   const now = overrides.now ?? (() => new Date());
+  const submissionQueue = overrides.submissionQueue ?? new BullMQSubmissionQueue();
+  const executionProvider = overrides.executionProvider ?? new Judge0ExecutionProvider();
 
   const userService = createUserService({
     userRepository: repositories.userRepository,
@@ -103,8 +106,8 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
-    executionProvider: overrides.executionProvider ?? new Judge0ExecutionProvider(),
-    submissionQueue: overrides.submissionQueue ?? new BullMQSubmissionQueue(),
+    executionProvider,
+    submissionQueue,
     now,
   });
 
@@ -117,14 +120,15 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestAttemptRepository: repositories.contestAttemptRepository,
     contestProctoringRepository: repositories.contestProctoringRepository,
     submissionRepository: repositories.submissionRepository,
-    submissionQueue: overrides.submissionQueue ?? new BullMQSubmissionQueue(),
+    submissionQueue,
     userRepository: repositories.userRepository,
-    executionProvider: overrides.executionProvider ?? new Judge0ExecutionProvider(),
+    executionProvider,
     now,
   });
 
   return {
-    authMiddleware: overrides.authMiddleware ?? authMiddleware,
+    userRepository: repositories.userRepository,
+    authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
     profileCompletionMiddleware: createRequireCompleteProfile(repositories.userRepository),
     databaseHealthcheck: async () => {
       await db.collection(env.FIRESTORE_TEST_COLLECTION).doc("demo").set({

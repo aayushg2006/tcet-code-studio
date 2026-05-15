@@ -10,6 +10,15 @@ type RoleRouteProps = {
   children: JSX.Element;
 };
 
+function requiresStudentProfileCompletion(user: { role: UserRole; isProfileComplete: boolean; uid: string | null }): boolean {
+  if (user.role !== "STUDENT") {
+    return !user.isProfileComplete;
+  }
+
+  const normalizedUid = user.uid?.trim() ?? "";
+  return !user.isProfileComplete || normalizedUid === "" || normalizedUid.toLowerCase().includes("mock");
+}
+
 export function RoleRoute({ allowedRole, children }: RoleRouteProps) {
   const { pathname } = useLocation();
   const userQuery = useQuery({
@@ -37,11 +46,13 @@ export function RoleRoute({ allowedRole, children }: RoleRouteProps) {
     return <Navigate to={getHomePathForRole(user.role)} replace />;
   }
 
-  if (!user.isProfileComplete && pathname !== "/complete-profile") {
+  const mustCompleteProfile = requiresStudentProfileCompletion(user);
+
+  if (mustCompleteProfile && pathname !== "/complete-profile") {
     return <Navigate to="/complete-profile" replace />;
   }
 
-  if (user.isProfileComplete && pathname === "/complete-profile") {
+  if (!mustCompleteProfile && pathname === "/complete-profile") {
     return <Navigate to={getHomePathForRole(user.role)} replace />;
   }
 

@@ -9,6 +9,8 @@ import {
 } from "./judge0-client";
 
 const PROVIDER_NAME = "judge0";
+const SUBMISSION_CHUNK_SIZE = 20;
+const MAX_CPU_TIME_LIMIT_SECONDS = 5;
 
 const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
 
@@ -25,6 +27,13 @@ interface TestExecutionOutcome {
 const LANGUAGE_RUNTIME_ALIASES: Partial<Record<ExecutableLanguage, ExecutableLanguage>> = {
   arduino: "cpp",
   vanilla: "javascript",
+};
+
+const LANGUAGE_TIME_LIMIT_MULTIPLIERS: Partial<Record<ExecutableLanguage, number>> = {
+  python: 3,
+  java: 1.5,
+  c: 1,
+  cpp: 1,
 };
 
 export class Judge0ExecutionProvider implements ExecutionProvider {
@@ -184,13 +193,38 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       }
 
       const languageId = await this.resolveLanguageId(request.language);
+      const preflightResult = await this.executeTestCase(
+        request,
+        {
+          input: "",
+          output: "",
+        },
+        languageId,
+      );
+
+      if (preflightResult.status === "COMPILATION_ERROR") {
+        return {
+          status: preflightResult.status,
+          runtimeMs: preflightResult.runtimeMs,
+          memoryKb: preflightResult.memoryKb,
+          passedCount: 0,
+          totalCount: 0,
+          provider: PROVIDER_NAME,
+          stdout: preflightResult.stdout,
+          stderr: preflightResult.stderr,
+        };
+      }
+
       const results: TestExecutionOutcome[] = [];
 
-      for (const testCase of request.testCases) {
-        const result = await this.executeTestCase(request, testCase, languageId);
-        results.push(result);
+      for (let index = 0; index < request.testCases.length; index += SUBMISSION_CHUNK_SIZE) {
+        const testCaseChunk = request.testCases.slice(index, index + SUBMISSION_CHUNK_SIZE);
+        const chunkResults = await Promise.all(
+          testCaseChunk.map((testCase) => this.executeTestCase(request, testCase, languageId)),
+        );
+        results.push(...chunkResults);
 
-        if (result.status !== "ACCEPTED") {
+        if (chunkResults.some((result) => result.status !== "ACCEPTED")) {
           break;
         }
       }
@@ -316,13 +350,15 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     languageId: number,
   ): Promise<TestExecutionOutcome> {
     try {
+      const adjustedTimeLimitSeconds = this.resolveAdjustedTimeLimitSeconds(request.language, request.timeLimitSeconds);
+
       const response = await this.client.createSubmissionAndWait({
         source_code: request.code,
         language_id: languageId,
         stdin: testCase.input,
         expected_output: testCase.output,
-        cpu_time_limit: request.timeLimitSeconds,
-        wall_time_limit: Math.max(request.timeLimitSeconds * 2, request.timeLimitSeconds + 1),
+        cpu_time_limit: adjustedTimeLimitSeconds,
+        wall_time_limit: Math.max(adjustedTimeLimitSeconds * 2, adjustedTimeLimitSeconds + 1),
         memory_limit: request.memoryLimitMb * 1024,
         enable_network: false,
         redirect_stderr_to_stdout: false,
@@ -346,6 +382,15 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
 
       throw error;
     }
+  }
+
+  private resolveAdjustedTimeLimitSeconds(language: ExecutableLanguage, baseTimeLimitSeconds: number): number {
+    const normalizedLanguage = this.validateLanguage(language);
+    const runtimeLanguage = this.resolveRuntimeLanguage(normalizedLanguage);
+    const multiplier = LANGUAGE_TIME_LIMIT_MULTIPLIERS[runtimeLanguage] ?? 1;
+    const adjustedTimeLimit = baseTimeLimitSeconds * multiplier;
+
+    return Math.min(adjustedTimeLimit, MAX_CPU_TIME_LIMIT_SECONDS);
   }
 
   private normalizeJudge0Response(response: Judge0SubmissionResponse): TestExecutionOutcome {

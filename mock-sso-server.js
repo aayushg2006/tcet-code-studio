@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = 4000;
-const COE_SHARED_TOKEN_SECRET = process.env.COE_SHARED_TOKEN_SECRET || 'local_dev_secret_key_123';
+const COE_SHARED_TOKEN_SECRET = 'TCET_LIVE_SECRET_999';
 const DEFAULT_CALLBACK_URL = process.env.MOCK_SSO_DEFAULT_CALLBACK_URL || 'http://localhost:5173';
 const COOKIE_NAME = 'coe_shared_token';
 const ALLOWED_ROLES = new Set(['ADMIN', 'FACULTY', 'STUDENT', 'INDUSTRY']);
@@ -73,8 +73,6 @@ app.post('/login', (req, res) => {
       email,
       role,
       status: 'ACTIVE',
-      uid: 'mock-123',
-      department: 'CMPN',
     },
     COE_SHARED_TOKEN_SECRET,
     {
@@ -97,7 +95,19 @@ app.get('/logout', (req, res) => {
     ? req.query.callbackUrl
     : DEFAULT_CALLBACK_URL;
 
-  res.clearCookie(COOKIE_NAME, { path: '/' });
+  const cookieOptions = [
+    { path: '/' },
+    { path: '/', domain: '127.0.0.1' },
+    { path: '/', domain: 'localhost' },
+    { path: '/', domain: '.tcetcercd.in' }
+  ];
+
+  cookieOptions.forEach(opt => {
+    res.cookie(COOKIE_NAME, '', { ...opt, expires: new Date(0), httpOnly: true });
+    res.clearCookie(COOKIE_NAME, opt);
+  });
+
+  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.redirect(302, callbackUrl);
 });
 

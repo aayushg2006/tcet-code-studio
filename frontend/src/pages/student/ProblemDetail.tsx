@@ -85,6 +85,8 @@ const FILE_EXTENSIONS: Partial<Record<ExecutableLanguage, string>> = {
   javascript: "js",
 };
 
+const CODE_DRAFT_SAVE_DELAY_MS = 500;
+
 function getStarterCode(language: ExecutableLanguage): string {
   return (
     STARTER_TEMPLATES[language] ??
@@ -96,6 +98,34 @@ function getStarterCode(language: ExecutableLanguage): string {
 
 function getSolutionFilename(language: ExecutableLanguage): string {
   return `Solution.${FILE_EXTENSIONS[language] ?? language}`;
+}
+
+function getCodeDraftStorageKey(problemId: string, language: ExecutableLanguage): string {
+  return `code_draft_${problemId}_${language}`;
+}
+
+function loadStoredDraft(problemId: string, language: ExecutableLanguage): string | null {
+  if (typeof window === "undefined" || !problemId) {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(getCodeDraftStorageKey(problemId, language));
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredDraft(problemId: string, language: ExecutableLanguage, code: string): void {
+  if (typeof window === "undefined" || !problemId) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(getCodeDraftStorageKey(problemId, language), code);
+  } catch {
+    // Ignore storage failures so the editor remains usable in restricted browsers.
+  }
 }
 
 function formatStatus(status: SubmissionStatus): string {
@@ -140,6 +170,7 @@ export default function ProblemDetail() {
   const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
   const pollingAbortRef = useRef<AbortController | null>(null);
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const draftSaveTimeoutRef = useRef<number | null>(null);
   const languageRef = useRef<ExecutableLanguage>("cpp");
   const code = draftsByLanguage[language] ?? getStarterCode(language);
 
@@ -149,12 +180,20 @@ export default function ProblemDetail() {
     return () => {
       pollingAbortRef.current?.abort();
       pollingAbortRef.current = null;
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
     pollingAbortRef.current?.abort();
     pollingAbortRef.current = null;
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
     setLanguage("cpp");
     setDraftsByLanguage({
       cpp: getStarterCode("cpp"),
@@ -166,6 +205,50 @@ export default function ProblemDetail() {
     setPendingSubmissionStatus(null);
     setCursorPosition({ lineNumber: 1, column: 1 });
   }, [id]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    const storedDraft = loadStoredDraft(id, language);
+    if (storedDraft === null) {
+      return;
+    }
+
+    setDraftsByLanguage((currentDrafts) => {
+      if (currentDrafts[language] === storedDraft) {
+        return currentDrafts;
+      }
+
+      return {
+        ...currentDrafts,
+        [language]: storedDraft,
+      };
+    });
+  }, [id, language]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+    }
+
+    draftSaveTimeoutRef.current = window.setTimeout(() => {
+      saveStoredDraft(id, language, code);
+      draftSaveTimeoutRef.current = null;
+    }, CODE_DRAFT_SAVE_DELAY_MS);
+
+    return () => {
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [id, language, code]);
 
   const handleFormatCode = async () => {
     if (!editorRef.current) {

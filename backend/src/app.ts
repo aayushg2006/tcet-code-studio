@@ -7,7 +7,7 @@ import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.route
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createContestRouter } from "./modules/contest/contest.routes";
-import { createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
+import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
 const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
@@ -101,19 +101,13 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   }
 
   app.get("/api/logout", (req, res) => {
-    const ssoLogoutUrl = `${req.protocol}://${req.hostname || "localhost"}:4000/logout`;
+    const ssoLogoutUrl = new URL("/logout", env.COE_AUTH_BASE_URL).toString();
     const frontendOrigin = resolveSafeFrontendOrigin(req.get("origin"), allowedOrigins);
     const callbackUrl = encodeURIComponent(frontendOrigin);
     res.redirect(302, `${ssoLogoutUrl}?callbackUrl=${callbackUrl}`);
   });
 
-  app.get("/api/auth/sso/callback", dependencies.authMiddleware, (req, res) => {
-    const frontendOrigin = resolveSafeFrontendOrigin(req.query.frontendOrigin, allowedOrigins);
-    const userRole = req.user?.role === "FACULTY" ? "FACULTY" : "STUDENT";
-    const destinationPath = userRole === "FACULTY" ? "/faculty/dashboard" : "/student/dashboard";
-    res.redirect(302, `${frontendOrigin}${destinationPath}`);
-  });
-
+  app.use("/api/auth", createAuthRouter(dependencies));
   app.use("/api/users", createUserRouter(dependencies));
   app.use("/api/user", createLegacyUserRouter(dependencies));
   app.use("/api/problems", createProblemRouter(dependencies));

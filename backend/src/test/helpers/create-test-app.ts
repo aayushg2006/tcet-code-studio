@@ -25,7 +25,7 @@ export function createTestApp() {
       email: "student1@tcetmumbai.in",
       role: "STUDENT",
       name: "Student One",
-      uid: "TCET-MOCK-001",
+      uid: "TCET-REAL-001",
       isProfileComplete: true,
       designation: null,
       rollNumber: "TCET001",
@@ -49,7 +49,7 @@ export function createTestApp() {
       email: "student2@tcetmumbai.in",
       role: "STUDENT",
       name: "Student Two",
-      uid: "TCET-MOCK-002",
+      uid: "TCET-REAL-002",
       isProfileComplete: true,
       designation: null,
       rollNumber: "TCET002",
@@ -73,7 +73,7 @@ export function createTestApp() {
       email: "faculty1@tcetmumbai.in",
       role: "FACULTY",
       name: "Prof. Mehta",
-      uid: "TCET-MOCK-F001",
+      uid: "TCET-FAC-001",
       isProfileComplete: true,
       designation: "Professor",
       rollNumber: null,
@@ -123,7 +123,7 @@ export function createTestApp() {
           ? "FACULTY"
           : "STUDENT",
       name: typeof req.headers["x-mock-name"] === "string" ? req.headers["x-mock-name"] : "Student One",
-      uid: typeof req.headers["x-mock-uid"] === "string" ? req.headers["x-mock-uid"] : "TCET-MOCK-001",
+      uid: typeof req.headers["x-mock-uid"] === "string" ? req.headers["x-mock-uid"] : "TCET-REAL-001",
       department:
         typeof req.headers["x-mock-department"] === "string"
           ? req.headers["x-mock-department"]
@@ -134,6 +134,7 @@ export function createTestApp() {
   };
 
   const dependencies: ApplicationDependencies = {
+    userRepository,
     authMiddleware: mockAuthMiddleware,
     profileCompletionMiddleware: createRequireCompleteProfile(userRepository),
     userService: createUserService({

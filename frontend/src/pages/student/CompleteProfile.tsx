@@ -22,6 +22,11 @@ const optionalUrlSchema = z
 const studentProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   department: z.enum(DEPARTMENTS),
+  uid: z
+    .string()
+    .trim()
+    .min(1, "UID is required")
+    .refine((value) => !value.toLowerCase().includes("mock"), "Enter your real UID"),
   rollNumber: z.string().trim().min(1, "Roll number is required"),
   semester: z.coerce.number().int().min(1).max(8),
   linkedInUrl: optionalUrlSchema,
@@ -60,6 +65,7 @@ export default function CompleteProfile() {
     resolver: zodResolver(studentProfileSchema),
     defaultValues: {
       name: userData?.user.name ?? "",
+      uid: userData?.user.uid ?? "",
       rollNumber: userData?.user.rollNumber ?? "",
       department: userData?.user.department ?? undefined,
       semester: userData?.user.semester ?? 1,
@@ -68,6 +74,7 @@ export default function CompleteProfile() {
     },
     values: {
       name: userData?.user.name ?? "",
+      uid: userData?.user.uid ?? "",
       rollNumber: userData?.user.rollNumber ?? "",
       department: userData?.user.department ?? undefined,
       semester: userData?.user.semester ?? 1,
@@ -108,6 +115,11 @@ export default function CompleteProfile() {
       toast.error((error as Error).message || "Failed to save profile");
     },
   });
+
+  const studentUid = studentForm.watch("uid");
+  const studentRollNumber = studentForm.watch("rollNumber");
+  const isStudentSaveDisabled =
+    saveMutation.isPending || studentUid.trim().length === 0 || studentRollNumber.trim().length === 0;
 
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading your profile…</div>;
@@ -232,6 +244,7 @@ export default function CompleteProfile() {
                 onSubmit={studentForm.handleSubmit((values) =>
                   saveMutation.mutate({
                     name: values.name.trim(),
+                    uid: values.uid.trim(),
                     rollNumber: values.rollNumber.trim(),
                     department: values.department,
                     semester: values.semester,
@@ -257,12 +270,26 @@ export default function CompleteProfile() {
 
                 <FormField
                   control={studentForm.control}
+                  name="uid"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>UID</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. TCET1234" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={studentForm.control}
                   name="rollNumber"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Roll Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. TCET1234" {...field} />
+                        <Input placeholder="Enter your university roll number" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -352,7 +379,7 @@ export default function CompleteProfile() {
                 <Button
                   type="submit"
                   className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
-                  disabled={saveMutation.isPending}
+                  disabled={isStudentSaveDisabled}
                 >
                   {saveMutation.isPending ? "Saving..." : "Save & Continue"}
                 </Button>

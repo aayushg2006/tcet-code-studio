@@ -13,7 +13,11 @@ export function createRequireCompleteProfile(userRepository: UserRepository): Re
       return next(new AppError(403, "Profile incomplete"));
     }
 
-    if (!user.isProfileComplete) {
+    const normalizedUid = user.uid?.trim() ?? "";
+    const hasInvalidStudentUid =
+      user.role === "STUDENT" && (normalizedUid === "" || normalizedUid.toLowerCase().includes("mock"));
+
+    if (!user.isProfileComplete || hasInvalidStudentUid) {
       return next(new AppError(403, "Profile incomplete"));
     }
 

@@ -3,9 +3,14 @@ import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { UserRecord } from "./user.model";
 
+export type UserRecordUpdate = Partial<Omit<UserRecord, "email" | "createdAt">>;
+
 export interface UserRepository {
+  findByEmail(email: string): Promise<UserRecord | null>;
   getByEmail(email: string): Promise<UserRecord | null>;
+  update(email: string, updates: UserRecordUpdate): Promise<UserRecord>;
   save(user: UserRecord): Promise<UserRecord>;
+  deleteByEmail(email: string): Promise<void>;
 }
 
 function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord {
@@ -53,7 +58,7 @@ function toFirestoreUser(user: UserRecord): Record<string, unknown> {
 export class FirestoreUserRepository implements UserRepository {
   constructor(private readonly firestore: Firestore) {}
 
-  async getByEmail(email: string): Promise<UserRecord | null> {
+  async findByEmail(email: string): Promise<UserRecord | null> {
     const snapshot = await this.firestore.collection("users").doc(email).get();
     if (!snapshot.exists) {
       return null;
@@ -62,8 +67,33 @@ export class FirestoreUserRepository implements UserRepository {
     return mapUserRecord(email, snapshot.data() as Record<string, unknown>);
   }
 
+  async getByEmail(email: string): Promise<UserRecord | null> {
+    return this.findByEmail(email);
+  }
+
+  async update(email: string, updates: UserRecordUpdate): Promise<UserRecord> {
+    const existingUser = await this.findByEmail(email);
+    if (!existingUser) {
+      throw new Error(`User not found for update: ${email}`);
+    }
+
+    const updatedUser: UserRecord = {
+      ...existingUser,
+      ...updates,
+      email: existingUser.email,
+      createdAt: existingUser.createdAt,
+    };
+
+    await this.firestore.collection("users").doc(email).set(toFirestoreUser(updatedUser), { merge: true });
+    return updatedUser;
+  }
+
   async save(user: UserRecord): Promise<UserRecord> {
     await this.firestore.collection("users").doc(user.email).set(toFirestoreUser(user), { merge: true });
     return user;
+  }
+
+  async deleteByEmail(email: string): Promise<void> {
+    await this.firestore.collection("users").doc(email).delete();
   }
 }

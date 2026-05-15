@@ -49,9 +49,45 @@ describe("Judge0ExecutionProvider", () => {
 
     expect(result.status).toBe("ACCEPTED");
     expect(client.lastPayload?.language_id).toBe(91);
+    expect(client.lastPayload?.cpu_time_limit).toBe(5);
+    expect(client.lastPayload?.wall_time_limit).toBe(10);
     expect(client.lastPayload?.enable_per_process_and_thread_time_limit).toBe(false);
     expect(client.lastPayload?.enable_per_process_and_thread_memory_limit).toBe(false);
     expect(client.lastPayload?.memory_limit).toBe(256 * 1024);
+  });
+
+  it("applies a 3x time limit multiplier for Python submissions", async () => {
+    const client = new FakeJudge0Client([{ id: 71, name: "Python (3.11.2)" }]);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    await provider.executeRun({
+      code: "print('OK')",
+      language: "python",
+      problemId: "problem-1",
+      timeLimitSeconds: 1,
+      memoryLimitMb: 256,
+      testCases: [{ input: "", output: "OK\n" }],
+    });
+
+    expect(client.lastPayload?.cpu_time_limit).toBe(3);
+    expect(client.lastPayload?.wall_time_limit).toBe(6);
+  });
+
+  it("keeps the base time limit for C-family runtimes", async () => {
+    const client = new FakeJudge0Client([{ id: 54, name: "C++ (GCC 9.2.0)" }]);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    await provider.executeRun({
+      code: "#include <iostream>\nint main() { std::cout << \"OK\\n\"; }",
+      language: "cpp",
+      problemId: "problem-1",
+      timeLimitSeconds: 1,
+      memoryLimitMb: 256,
+      testCases: [{ input: "", output: "OK\n" }],
+    });
+
+    expect(client.lastPayload?.cpu_time_limit).toBe(1);
+    expect(client.lastPayload?.wall_time_limit).toBe(2);
   });
 
   it("maps compatibility aliases like arduino and vanilla to stable Judge0 runtimes", async () => {

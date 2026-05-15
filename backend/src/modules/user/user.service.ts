@@ -21,6 +21,7 @@ export interface UpdateCurrentUserProfileInput {
   name: string;
   department: Department;
   designation?: string | null;
+  uid?: string | null;
   rollNumber?: string | null;
   semester?: number | null;
   linkedInUrl: string | null;
@@ -28,6 +29,7 @@ export interface UpdateCurrentUserProfileInput {
 }
 
 export interface UserService {
+  syncAuthenticatedUser(user: AuthenticatedUser): Promise<UserRecord>;
   getCurrentUser(user: AuthenticatedUser): Promise<UserProfileResponse>;
   getUserByEmail(email: string): Promise<UserProfileResponse>;
   getCurrentUserAnalytics(user: AuthenticatedUser): Promise<UserProfileAnalyticsResponse>;
@@ -43,6 +45,17 @@ interface UserServiceDependencies {
   leaderboardRepository: LeaderboardRepository;
   submissionRepository: SubmissionRepository;
   now: () => Date;
+}
+
+function hasCompletedProfile(user: UserRecord): boolean {
+  const normalizedUid = user.uid?.trim() ?? "";
+  const hasValidStudentUid = normalizedUid !== "" && !normalizedUid.toLowerCase().includes("mock");
+
+  if (user.role === "FACULTY") {
+    return Boolean(user.name && user.department && user.designation);
+  }
+
+  return Boolean(user.name && user.department && user.semester && hasValidStudentUid && user.rollNumber);
 }
 
 function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
@@ -179,12 +192,17 @@ function buildAnalyticsFromSubmissions(
 
 export function createUserService(dependencies: UserServiceDependencies): UserService {
   return {
-    async getCurrentUser(authUser) {
+    async syncAuthenticatedUser(authUser) {
       const now = dependencies.now();
       const existingUser = await dependencies.userRepository.getByEmail(authUser.email);
-      const user = existingUser ? mergeUser(existingUser, authUser, now) : createDefaultUser(authUser, now);
+      const synchronizedUser = existingUser ? mergeUser(existingUser, authUser, now) : createDefaultUser(authUser, now);
+      await dependencies.userRepository.save(synchronizedUser);
 
-      await dependencies.userRepository.save(user);
+      return synchronizedUser;
+    },
+
+    async getCurrentUser(authUser) {
+      const user = await this.syncAuthenticatedUser(authUser);
       if (isRankedLeaderboardEntry(user)) {
         await dependencies.leaderboardRepository.save(buildLeaderboardEntryFromUser(user));
       } else {
@@ -224,20 +242,23 @@ export function createUserService(dependencies: UserServiceDependencies): UserSe
 
     async updateCurrentUserProfile(authUser, input) {
       const now = dependencies.now();
-      const existingUser = await dependencies.userRepository.getByEmail(authUser.email);
-      const baseUser = existingUser ? mergeUser(existingUser, authUser, now) : createDefaultUser(authUser, now);
+      const baseUser = await this.syncAuthenticatedUser(authUser);
 
-      const updatedUser: UserRecord = {
+      const updatedUserBase: UserRecord = {
         ...baseUser,
-        isProfileComplete: true,
         name: input.name,
         designation: authUser.role === "FACULTY" ? input.designation ?? null : null,
+        uid: authUser.role === "STUDENT" ? input.uid ?? null : baseUser.uid,
         rollNumber: authUser.role === "STUDENT" ? input.rollNumber ?? null : null,
         department: input.department,
         semester: authUser.role === "STUDENT" ? input.semester ?? null : null,
         linkedInUrl: input.linkedInUrl,
         githubUrl: input.githubUrl,
         updatedAt: now,
+      };
+      const updatedUser: UserRecord = {
+        ...updatedUserBase,
+        isProfileComplete: hasCompletedProfile(updatedUserBase),
       };
 
       await dependencies.userRepository.save(updatedUser);

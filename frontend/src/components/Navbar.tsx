@@ -1,12 +1,11 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { LogOut, Moon, Sun } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { userApi } from "@/api/services";
-import { getApiBaseUrl } from "@/api/client";
 import type { UserRole } from "@/api/types";
 
 const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
@@ -46,6 +45,7 @@ function getAvatarFallback(name: string | null | undefined, role: UserRole): str
 export function Navbar() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
+  const queryClient = useQueryClient();
   const userQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => userApi.me(pathname, { suppressAuthRedirect: true }),
@@ -64,7 +64,13 @@ export function Navbar() {
       return;
     }
 
-    window.location.assign(`${getApiBaseUrl()}/api/logout`);
+    localStorage.clear();
+    sessionStorage.clear();
+    queryClient.removeQueries({ queryKey: ["auth"] });
+    queryClient.removeQueries({ queryKey: ["user"] });
+    queryClient.clear();
+    const authUrl = (import.meta.env.VITE_MOCK_SSO_URL as string | undefined)?.trim() || "http://localhost:4000";
+    window.location.href = `${authUrl.replace(/\/+$/, "")}/logout?callbackUrl=${encodeURIComponent(window.location.origin)}`;
   };
 
   return (

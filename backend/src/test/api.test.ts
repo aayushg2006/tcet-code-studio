@@ -112,6 +112,54 @@ describe("TCET Code Studio backend APIs", () => {
     expect(forbiddenStudentLookup.status).toBe(403);
   });
 
+  it("requires a student UID during profile completion and persists UID separately from roll number", async () => {
+    const { app, repositories } = createTestApp();
+    const incompleteStudentHeaders = {
+      "x-mock-email": "newstudent@tcetmumbai.in",
+      "x-mock-role": "STUDENT",
+      "x-mock-name": "New Student",
+      "x-mock-uid": "",
+    };
+
+    const missingUidResponse = await request(app)
+      .patch("/api/users/me")
+      .set(incompleteStudentHeaders)
+      .send({
+        name: "New Student",
+        rollNumber: "ROLL-2026-001",
+        department: "B.E. Computer Engineering",
+        semester: 4,
+        linkedInUrl: null,
+        githubUrl: null,
+      });
+
+    expect(missingUidResponse.status).toBe(400);
+    expect(missingUidResponse.body.message).toBe("Validation failed");
+
+    const completedProfileResponse = await request(app)
+      .patch("/api/users/me")
+      .set(incompleteStudentHeaders)
+      .send({
+        name: "New Student",
+        uid: "TCET1234",
+        rollNumber: "ROLL-2026-001",
+        department: "B.E. Computer Engineering",
+        semester: 4,
+        linkedInUrl: null,
+        githubUrl: null,
+      });
+
+    expect(completedProfileResponse.status).toBe(200);
+    expect(completedProfileResponse.body.user.uid).toBe("TCET1234");
+    expect(completedProfileResponse.body.user.rollNumber).toBe("ROLL-2026-001");
+    expect(completedProfileResponse.body.user.isProfileComplete).toBe(true);
+
+    const savedUser = await repositories.userRepository.getByEmail("newstudent@tcetmumbai.in");
+    expect(savedUser?.uid).toBe("TCET1234");
+    expect(savedUser?.rollNumber).toBe("ROLL-2026-001");
+    expect(savedUser?.isProfileComplete).toBe(true);
+  });
+
   it("supports faculty problem workflows and redacts hidden cases from student detail responses", async () => {
     const { app } = createTestApp();
 

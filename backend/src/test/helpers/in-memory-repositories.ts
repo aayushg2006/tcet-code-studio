@@ -15,7 +15,7 @@ import type { ProblemRepository } from "../../modules/problem/problem.repository
 import type { SubmissionRecord } from "../../modules/submission/submission.model";
 import type { SubmissionListFilters, SubmissionRepository } from "../../modules/submission/submission.repository";
 import type { UserRecord } from "../../modules/user/user.model";
-import type { UserRepository } from "../../modules/user/user.repository";
+import type { UserRecordUpdate, UserRepository } from "../../modules/user/user.repository";
 
 function cloneDate(value: Date | null): Date | null {
   return value ? new Date(value.getTime()) : null;
@@ -122,14 +122,39 @@ export class InMemoryUserRepository implements UserRepository {
     seed.forEach((user) => this.users.set(user.email, cloneUser(user)));
   }
 
-  async getByEmail(email: string): Promise<UserRecord | null> {
+  async findByEmail(email: string): Promise<UserRecord | null> {
     const user = this.users.get(email);
     return user ? cloneUser(user) : null;
+  }
+
+  async getByEmail(email: string): Promise<UserRecord | null> {
+    return this.findByEmail(email);
+  }
+
+  async update(email: string, updates: UserRecordUpdate): Promise<UserRecord> {
+    const existingUser = await this.findByEmail(email);
+    if (!existingUser) {
+      throw new Error(`User not found for update: ${email}`);
+    }
+
+    const updatedUser: UserRecord = {
+      ...existingUser,
+      ...updates,
+      email: existingUser.email,
+      createdAt: existingUser.createdAt,
+    };
+
+    this.users.set(email, cloneUser(updatedUser));
+    return cloneUser(updatedUser);
   }
 
   async save(user: UserRecord): Promise<UserRecord> {
     this.users.set(user.email, cloneUser(user));
     return cloneUser(user);
+  }
+
+  async deleteByEmail(email: string): Promise<void> {
+    this.users.delete(email);
   }
 }
 
