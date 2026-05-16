@@ -32,6 +32,10 @@ const LANGUAGE_RUNTIME_ALIASES: Partial<Record<ExecutableLanguage, ExecutableLan
 const LANGUAGE_TIME_LIMIT_MULTIPLIERS: Partial<Record<ExecutableLanguage, number>> = {
   python: 3,
   java: 1.5,
+  elixir: 3,
+  erlang: 2,
+  kotlin: 2,
+  scala: 2,
   c: 1,
   cpp: 1,
 };

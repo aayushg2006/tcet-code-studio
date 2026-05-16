@@ -41,9 +41,12 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
 
 export const EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["vanilla", "react", "html", "css"];
 export const EXECUTION_EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["react", "html", "css"];
+export const EXECUTION_UNAVAILABLE_LANGUAGES: ExecutableLanguage[] = ["dart", "kotlin", "scala", "racket"];
 
 export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
-  (language): language is ExecutableLanguage => !EXECUTION_EDITOR_ONLY_LANGUAGES.includes(language),
+  (language): language is ExecutableLanguage =>
+    !EXECUTION_EDITOR_ONLY_LANGUAGES.includes(language) &&
+    !EXECUTION_UNAVAILABLE_LANGUAGES.includes(language as ExecutableLanguage),
 );
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {

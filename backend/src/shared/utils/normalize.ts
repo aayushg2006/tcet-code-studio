@@ -2,6 +2,7 @@ import {
   DEPARTMENTS,
   DIFFICULTIES,
   EDITOR_ONLY_LANGUAGES,
+  EXECUTABLE_LANGUAGES,
   FINAL_SUBMISSION_STATUSES,
   PROBLEM_LIFECYCLE_STATES,
   SUPPORTED_LANGUAGES,
@@ -166,7 +167,7 @@ export function isEditorOnlyLanguage(language: SupportedLanguage): language is E
 }
 
 export function isExecutableLanguage(language: SupportedLanguage): language is ExecutableLanguage {
-  return !isEditorOnlyLanguage(language);
+  return EXECUTABLE_LANGUAGES.includes(language as ExecutableLanguage);
 }
 
 export function normalizeExecutableLanguage(

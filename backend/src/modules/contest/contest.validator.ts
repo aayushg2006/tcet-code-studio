@@ -5,7 +5,7 @@ import {
   DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
   EXECUTABLE_LANGUAGES,
 } from "../../shared/constants/domain";
-import { normalizeNumber, tryNormalizeSupportedLanguage } from "../../shared/utils/normalize";
+import { isExecutableLanguage, normalizeNumber, tryNormalizeSupportedLanguage } from "../../shared/utils/normalize";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { CodingContestQuestion } from "./contest.model";
 
@@ -28,8 +28,7 @@ const codingLanguagesSchema = z
     (values ?? [])
       .map((value) => tryNormalizeSupportedLanguage(value))
       .filter(
-        (value): value is ExecutableLanguage =>
-          Boolean(value && value !== "react" && value !== "html" && value !== "css"),
+        (value): value is ExecutableLanguage => Boolean(value && isExecutableLanguage(value)),
       ),
   );
 
@@ -118,7 +117,7 @@ export const contestCodingSubmissionSchema = z.object({
     .min(1)
     .transform((value, ctx) => {
       const normalized = tryNormalizeSupportedLanguage(value);
-      if (!normalized || normalized === "react" || normalized === "html" || normalized === "css") {
+      if (!normalized || !isExecutableLanguage(normalized)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Unsupported language",

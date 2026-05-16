@@ -221,6 +221,25 @@ Provisioned fields include:
 - Ensure backend CORS includes your frontend origin.
 - Ensure all three processes are running.
 
+### Judge0 sandbox errors on Apple Silicon
+
+- Official Judge0 compiler images are `amd64`.
+- Full sandbox validation is supported by the repo helpers on either:
+  - a Linux `x86_64` host, or
+  - Apple Silicon macOS with the `judge0-x64` Colima profile running as `x86_64` and exposing `cgroup v1`
+- If the Colima guest is still on `cgroup v2`, switch it once inside the guest and reboot the profile:
+  - set `GRUB_CMDLINE_LINUX=" systemd.unified_cgroup_hierarchy=0 cgroup_enable=memory swapaccount=1"` in `/etc/default/grub`
+  - run `sudo update-grub`
+  - restart the profile with `colima stop --profile judge0-x64` and `colima start --profile judge0-x64`
+- On Linux `x86_64`, start Judge0 with `npm run judge0:up`.
+- On Apple Silicon after the Colima fix, start Judge0 with `npm run judge0:up`.
+- Inspect readiness with `npm run judge0:status`.
+- Verify real sandbox behavior with `npm run judge0:test-sandbox`.
+- Verify the currently exposed runtime language set with `npm run judge0:test-languages`.
+- `judge0:up` now succeeds only when the Judge0 API is reachable and the sandbox runtime probe passes.
+- Point backend execution to the local Judge0 instance by setting `JUDGE0_BASE_URL=http://localhost:2358` and clearing `JUDGE0_API_KEY` / `JUDGE0_HOST` in `backend/.env`.
+- The local Judge0 1.13.1 image used here does not provide stable execution for `dart`, `racket`, `kotlin`, or `scala`, so those languages are hidden from contest/problem execution even though some remain valid labels for historical data or future providers.
+
 ## Security Notes
 
 - Never commit secrets or credentials.

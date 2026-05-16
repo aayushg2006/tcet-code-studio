@@ -36,8 +36,11 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
   "racket",
 ];
 export const EDITOR_ONLY_LANGUAGES: EditorOnlyLanguage[] = ["react", "html", "css"];
+export const RUNTIME_UNAVAILABLE_LANGUAGES: ExecutableLanguage[] = ["dart", "kotlin", "scala", "racket"];
 export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
-  (language): language is ExecutableLanguage => !EDITOR_ONLY_LANGUAGES.includes(language as EditorOnlyLanguage),
+  (language): language is ExecutableLanguage =>
+    !EDITOR_ONLY_LANGUAGES.includes(language as EditorOnlyLanguage) &&
+    !RUNTIME_UNAVAILABLE_LANGUAGES.includes(language as ExecutableLanguage),
 );
 export const PROBLEM_LIFECYCLE_STATES: ProblemLifecycleState[] = ["Draft", "Published", "Archived"];
 export const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
