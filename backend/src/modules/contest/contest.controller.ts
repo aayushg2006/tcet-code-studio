@@ -7,7 +7,6 @@ import {
   contestCodingSubmissionSchema,
   contestProctoringEventSchema,
   contestResultsSchema,
-  contestStateSchema,
   createContestSchema,
   updateContestSchema,
 } from "./contest.validator";
@@ -46,16 +45,6 @@ export function createContestController(contestService: ContestService) {
         req.user!,
         getRouteParam(req.params.contestId),
         payload,
-      );
-      res.json({ contest });
-    },
-
-    async updateContestState(req: Request, res: Response): Promise<void> {
-      const payload = contestStateSchema.parse(req.body);
-      const contest = await contestService.updateContestState(
-        req.user!,
-        getRouteParam(req.params.contestId),
-        payload.lifecycleState,
       );
       res.json({ contest });
     },

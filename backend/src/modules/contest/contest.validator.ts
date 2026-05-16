@@ -9,7 +9,6 @@ import { normalizeNumber, tryNormalizeSupportedLanguage } from "../../shared/uti
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { CodingContestQuestion } from "./contest.model";
 
-const contestLifecycleSchema = z.enum(["Draft", "Published", "Archived"]);
 const contestTypeSchema = z.enum(["Rated", "Practice"]);
 const contestQuestionTypeSchema = z.enum(["MCQ", "MSQ", "Coding"]);
 const departmentSchema = z.enum(DEPARTMENTS);
@@ -91,7 +90,7 @@ export const createContestSchema = z.object({
   startTime: z.string().min(1),
   duration: numberSchema,
   type: contestTypeSchema,
-  lifecycleState: contestLifecycleSchema.optional(),
+  lifecycleState: z.literal("Published").optional(),
   targetDepartment: z.union([departmentSchema, z.null()]).optional(),
   maxViolations: numberSchema.optional(),
   questions: z.array(contestQuestionSchema).min(1),
@@ -101,10 +100,6 @@ export const updateContestSchema = createContestSchema.partial().refine(
   (value) => Object.keys(value).length > 0,
   "At least one field must be provided for update",
 );
-
-export const contestStateSchema = z.object({
-  lifecycleState: contestLifecycleSchema,
-});
 
 export const contestResultsSchema = z.object({
   resultsPublished: z.boolean(),

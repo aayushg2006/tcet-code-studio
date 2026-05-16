@@ -308,7 +308,7 @@ export interface UserProfileAnalyticsEnvelope {
 }
 
 export type ContestType = "Rated" | "Practice";
-export type ContestLifecycleState = "Draft" | "Published" | "Archived";
+export type ContestLifecycleState = "Published";
 export type ContestStatus = "Upcoming" | "Live" | "Ended";
 export type ContestStudentListStatus = "Upcoming" | "Live" | "Past";
 export type ContestQuestionType = "MCQ" | "MSQ" | "Coding";

@@ -1,10 +1,10 @@
 import cookieParser from "cookie-parser";
 import cors, { type CorsOptions } from "cors";
 import express, { type Express } from "express";
-import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
+import { createGlobalApiRateLimiter } from "./middleware/rate-limit";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
@@ -73,18 +73,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.set("trust proxy", 1);
   const corsOptions = resolveCorsOptions();
   const allowedOrigins = resolveAllowedOrigins();
-  const globalLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 150,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-  const submissionLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
+  const globalLimiter = createGlobalApiRateLimiter();
 
   app.disable("x-powered-by");
   app.use(helmet());
@@ -129,7 +118,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/user", createLegacyUserRouter(dependencies));
   app.use("/api/problems", createProblemRouter(dependencies));
   app.use("/api/contests", createContestRouter(dependencies));
-  app.use("/api/submissions", submissionLimiter, createSubmissionRouter(dependencies));
+  app.use("/api/submissions", createSubmissionRouter(dependencies));
   app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
 
   app.use(notFoundHandler);

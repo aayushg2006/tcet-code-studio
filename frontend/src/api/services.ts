@@ -6,7 +6,6 @@ import type {
   ContestCodingSubmissionPayload,
   ContestCodingSubmissionReceipt,
   ContestEnvelope,
-  ContestLifecycleState,
   ContestListItem,
   ContestAttemptsEnvelope,
   FacultyContestAttemptReviewEnvelope,
@@ -174,12 +173,6 @@ export const contestsApi = {
     apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}`, {
       method: "PATCH",
       body: payload,
-      pathname,
-    }),
-  updateState: (contestId: string, lifecycleState: ContestLifecycleState, pathname?: string) =>
-    apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}/state`, {
-      method: "PATCH",
-      body: { lifecycleState },
       pathname,
     }),
   updateResultsVisibility: (contestId: string, payload: ContestResultsVisibilityPayload, pathname?: string) =>

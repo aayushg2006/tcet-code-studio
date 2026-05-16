@@ -72,6 +72,7 @@ export default function ContestDetail() {
     contestId: id,
     pathname,
     attempt,
+    maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
   });
 
@@ -210,7 +211,7 @@ export default function ContestDetail() {
         <Alert variant="destructive">
           <AlertTitle>Proctoring Alert</AlertTitle>
           <AlertDescription>
-            Tab switching, fullscreen exit, and clipboard usage are tracked. Three violations trigger auto-submit.
+            Tab switching, fullscreen exit, and screenshot attempts are tracked. {contest.maxViolations} violations trigger auto-submit.
             {attempt ? ` Current violations: ${attempt.violationCount}/${contest.maxViolations}.` : ""}
           </AlertDescription>
         </Alert>
@@ -285,6 +286,10 @@ export default function ContestDetail() {
         {contest.computedStatus === "Upcoming" ? (
           <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
             Questions will be revealed when the contest starts.
+          </Card>
+        ) : !attemptIsActive ? (
+          <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
+            Questions will be revealed after you start the contest and enter the proctored mode.
           </Card>
         ) : (
           contest.questions.map((question) => {

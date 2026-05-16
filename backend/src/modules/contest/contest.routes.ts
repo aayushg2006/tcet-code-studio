@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
+import { createFinalSubmissionRateLimiters } from "../../middleware/rate-limit";
 import { requireRole } from "../../middleware/require-role";
 import { asyncHandler } from "../../shared/middleware/async-handler";
 import { createContestController } from "./contest.controller";
@@ -21,7 +22,6 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
 
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createContest));
   router.patch("/:contestId", requireRole("FACULTY"), asyncHandler(controller.updateContest));
-  router.patch("/:contestId/state", requireRole("FACULTY"), asyncHandler(controller.updateContestState));
   router.patch("/:contestId/results", requireRole("FACULTY"), asyncHandler(controller.updateContestResults));
 
   router.post("/:contestId/attempts", requireRole("STUDENT"), asyncHandler(controller.startAttempt));
@@ -32,6 +32,7 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
   router.post(
     "/:contestId/coding-submissions",
     requireRole("STUDENT"),
+    ...createFinalSubmissionRateLimiters(),
     asyncHandler(controller.submitCodingQuestion),
   );
 

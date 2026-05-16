@@ -395,6 +395,13 @@ describe("TCET Code Studio backend APIs", () => {
       duration: 30,
       lifecycleState: "Published",
     });
+    expect(contest.lifecycleState).toBe("Published");
+
+    const stateUpdateResponse = await request(app)
+      .patch(`/api/contests/${contest.id}/state`)
+      .set(facultyHeaders)
+      .send({ lifecycleState: "Archived" });
+    expect(stateUpdateResponse.status).toBe(404);
 
     const contestListResponse = await request(app).get("/api/contests");
     expect(contestListResponse.status).toBe(200);
@@ -402,14 +409,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(contestListResponse.body.items[0].computedStatus).toBe("Ended");
 
     const studentQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
-    expect(studentQuestionResponse.status).toBe(200);
-    expect(studentQuestionResponse.body.question.questionNumber).toBe(1);
-    expect(studentQuestionResponse.body.question.correctAnswer).toBeUndefined();
-
-    const codingQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_code_1`);
-    expect(codingQuestionResponse.status).toBe(200);
-    expect(codingQuestionResponse.body.question.questionNumber).toBe(2);
-    expect(codingQuestionResponse.body.question.hiddenTestCases).toBeUndefined();
+    expect(studentQuestionResponse.status).toBe(409);
 
     const hiddenStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(hiddenStandingsResponse.status).toBe(403);
@@ -444,22 +444,40 @@ describe("TCET Code Studio backend APIs", () => {
     expect(detailResponse.body.contest.questions).toEqual([]);
 
     const questionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
-    expect(questionResponse.status).toBe(403);
+    expect(questionResponse.status).toBe(409);
 
     const attemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
     expect(attemptResponse.status).toBe(409);
   });
 
-  it("processes live contest attempts, contest coding runs, queued contest coding submits, and auto-submits on the third proctoring violation", async () => {
+  it("gates live contest questions until start, ignores clipboard proctor events, and auto-submits on configured violations", async () => {
     const { app, repositories, services } = createTestApp();
     const contest = await createContest(app, {
       startTime: "2026-05-07T00:00:00.000Z",
       duration: 60,
+      maxViolations: 4,
     });
+
+    const detailBeforeStartResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailBeforeStartResponse.status).toBe(200);
+    expect(detailBeforeStartResponse.body.contest.computedStatus).toBe("Live");
+    expect(detailBeforeStartResponse.body.contest.questions).toEqual([]);
+
+    const questionBeforeStartResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(questionBeforeStartResponse.status).toBe(409);
 
     const startAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
     expect(startAttemptResponse.status).toBe(201);
     expect(startAttemptResponse.body.attempt.status).toBe("ACTIVE");
+
+    const detailAfterStartResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailAfterStartResponse.status).toBe(200);
+    expect(detailAfterStartResponse.body.contest.questions).toHaveLength(2);
+
+    const questionAfterStartResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
+    expect(questionAfterStartResponse.status).toBe(200);
+    expect(questionAfterStartResponse.body.question.questionNumber).toBe(1);
+    expect(questionAfterStartResponse.body.question.correctAnswer).toBeUndefined();
 
     const answerResponse = await request(app)
       .post(`/api/contests/${contest.id}/answers`)
@@ -491,11 +509,19 @@ describe("TCET Code Studio backend APIs", () => {
     );
     expect(processedContestSubmission.status).toBe("ACCEPTED");
 
+    for (const type of ["COPY", "CUT", "PASTE", "CONTEXT_MENU"]) {
+      const clipboardResponse = await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type });
+      expect(clipboardResponse.status).toBe(200);
+      expect(clipboardResponse.body.attempt.status).toBe("ACTIVE");
+      expect(clipboardResponse.body.attempt.violationCount).toBe(0);
+    }
+
     await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "TAB_SWITCH" });
     await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "VISIBILITY_LOSS" });
+    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "FULLSCREEN_EXIT" });
     const autoSubmitResponse = await request(app)
       .post(`/api/contests/${contest.id}/proctor-events`)
-      .send({ type: "COPY" });
+      .send({ type: "PRINT_SCREEN" });
     expect(autoSubmitResponse.status).toBe(200);
     expect(autoSubmitResponse.body.attempt.status).toBe("AUTO_SUBMITTED");
 
@@ -508,6 +534,6 @@ describe("TCET Code Studio backend APIs", () => {
       .get(`/api/contests/${contest.id}/attempts`)
       .set(facultyHeaders);
     expect(attemptsResponse.status).toBe(200);
-    expect(attemptsResponse.body.items[0].violationCount).toBe(3);
+    expect(attemptsResponse.body.items[0].violationCount).toBe(4);
   });
 });

@@ -181,6 +181,8 @@ export default function ContestCodingWorkspace() {
   const pathname = `/student/contests/${id}/questions/${questionId}`;
   const queryClient = useQueryClient();
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const blockedClipboardToastRef = useRef(0);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-question-detail", id, questionId],
@@ -192,6 +194,7 @@ export default function ContestCodingWorkspace() {
   const attempt = payload?.attempt ?? null;
   const question = payload?.question;
   const contest = payload?.contest;
+  const attemptIsActive = attempt?.status === "ACTIVE";
   const availableLanguages: ExecutableLanguage[] =
     question && question.type === "Coding" ? EXECUTABLE_LANGUAGES : ["cpp"];
   const defaultLanguage = (availableLanguages[0] ?? "cpp") as ExecutableLanguage;
@@ -225,8 +228,41 @@ export default function ContestCodingWorkspace() {
     contestId: id,
     pathname,
     attempt,
+    maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
   });
+
+  useEffect(() => {
+    if (!attemptIsActive) {
+      return;
+    }
+
+    const container = editorContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const blockClipboardAction = (event: ClipboardEvent | MouseEvent) => {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - blockedClipboardToastRef.current > 2000) {
+        blockedClipboardToastRef.current = now;
+        toast.info("Copy, cut, paste, and right-click are disabled in the contest workspace.");
+      }
+    };
+
+    container.addEventListener("copy", blockClipboardAction);
+    container.addEventListener("cut", blockClipboardAction);
+    container.addEventListener("paste", blockClipboardAction);
+    container.addEventListener("contextmenu", blockClipboardAction);
+
+    return () => {
+      container.removeEventListener("copy", blockClipboardAction);
+      container.removeEventListener("cut", blockClipboardAction);
+      container.removeEventListener("paste", blockClipboardAction);
+      container.removeEventListener("contextmenu", blockClipboardAction);
+    };
+  }, [attemptIsActive]);
 
   const startAttemptMutation = useMutation({
     mutationFn: () => contestsApi.startAttempt(id, pathname),
@@ -296,7 +332,6 @@ export default function ContestCodingWorkspace() {
     return <Navigate to={`/student/contests/${id}`} replace />;
   }
 
-  const attemptIsActive = attempt?.status === "ACTIVE";
   const isLocked = Boolean(attempt && attempt.status !== "ACTIVE");
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
@@ -408,7 +443,7 @@ export default function ContestCodingWorkspace() {
 
           <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
             <div className="flex h-full min-h-0 flex-col gap-3">
-              <Card className="overflow-hidden shadow-card">
+              <Card ref={editorContainerRef} className="overflow-hidden shadow-card">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <select
@@ -469,7 +504,8 @@ export default function ContestCodingWorkspace() {
                     scrollBeyondLastLine: false,
                     fontFamily: "JetBrains Mono, monospace",
                     tabSize: 2,
-                    formatOnPaste: true,
+                    formatOnPaste: false,
+                    contextmenu: false,
                   }}
                 />
               </Card>

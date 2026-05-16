@@ -181,12 +181,7 @@ function mapContestRecord(contestId: string, data: Record<string, unknown>): Con
     startAt: toDate(data.startAt) ?? createdAt,
     durationMinutes: normalizeNumber(data.durationMinutes ?? data.duration, 60),
     type: data.type === "Practice" ? "Practice" : "Rated",
-    lifecycleState:
-      data.lifecycleState === "Archived"
-        ? "Archived"
-        : data.lifecycleState === "Published"
-          ? "Published"
-          : "Draft",
+    lifecycleState: "Published",
     resultsPublished: Boolean(data.resultsPublished),
     targetDepartment: normalizeDepartment(data.targetDepartment),
     maxViolations: normalizeNumber(data.maxViolations, 3),
