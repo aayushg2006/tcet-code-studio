@@ -61,7 +61,11 @@ export default function FacultyProfile() {
   return (
     <AppLayout>
       <div className="container py-8">
-        <Card className="mx-auto max-w-3xl space-y-6 p-6 shadow-card">
+        <div className="profile-shell relative mx-auto max-w-4xl overflow-hidden p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:radial-gradient(circle_at_15%_10%,hsl(var(--primary)/0.2),transparent_34%),radial-gradient(circle_at_84%_18%,hsl(var(--accent)/0.16),transparent_40%)] dark:opacity-60" />
+          <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(120deg,hsl(var(--muted-foreground)/0.1)_0_1px,transparent_1px_22px)] dark:opacity-45" />
+
+          <Card className="profile-card relative mx-auto max-w-3xl space-y-6 p-6">
           {loading ? (
             <>
               <div className="flex items-center gap-4">
@@ -84,14 +88,16 @@ export default function FacultyProfile() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-14 w-14 border border-border">
-                    <AvatarFallback>{avatarInitials(profile.name, profile.email)}</AvatarFallback>
+                    <AvatarFallback className="bg-primary/10 font-semibold text-primary dark:bg-primary/15 dark:text-primary">
+                      {avatarInitials(profile.name, profile.email)}
+                    </AvatarFallback>
                   </Avatar>
                   <div>
                     <h1 className="font-display text-2xl font-bold">{profile.name ?? "Faculty"}</h1>
                     <p className="text-sm text-muted-foreground">{profile.email}</p>
                   </div>
                 </div>
-                <Badge className="bg-blue-600 text-white hover:bg-blue-600">Administrator</Badge>
+                <Badge className="bg-primary text-primary-foreground hover:bg-primary">Administrator</Badge>
               </div>
 
               <div className="grid gap-3 text-sm md:grid-cols-2">
@@ -106,7 +112,8 @@ export default function FacultyProfile() {
               </div>
             </>
           ) : null}
-        </Card>
+          </Card>
+        </div>
       </div>
     </AppLayout>
   );
