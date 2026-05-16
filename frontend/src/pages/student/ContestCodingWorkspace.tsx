@@ -192,7 +192,7 @@ export default function ContestCodingWorkspace() {
   const attempt = payload?.attempt ?? null;
   const question = payload?.question;
   const contest = payload?.contest;
-  const availableLanguages =
+  const availableLanguages: ExecutableLanguage[] =
     question && question.type === "Coding" ? EXECUTABLE_LANGUAGES : ["cpp"];
   const defaultLanguage = (availableLanguages[0] ?? "cpp") as ExecutableLanguage;
   const [language, setLanguage] = useState<ExecutableLanguage>(defaultLanguage);
