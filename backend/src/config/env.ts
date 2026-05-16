@@ -49,7 +49,7 @@ const envSchema = z.object({
   REDIS_DB: z.coerce.number().int().nonnegative().default(0),
   REDIS_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
   SUBMISSION_QUEUE_NAME: z.string().min(1).default("tcet-code-submissions"),
-  SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(8),
+  SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(4),
   SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
   EMBED_SUBMISSION_WORKER: z
     .unknown()

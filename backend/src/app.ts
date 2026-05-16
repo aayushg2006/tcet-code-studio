@@ -1,6 +1,8 @@
 import cookieParser from "cookie-parser";
 import cors, { type CorsOptions } from "cors";
 import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
@@ -68,15 +70,30 @@ function resolveCorsOptions(): CorsOptions {
 
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
+  app.set("trust proxy", 1);
   const corsOptions = resolveCorsOptions();
   const allowedOrigins = resolveAllowedOrigins();
+  const globalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 150,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  const submissionLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
   app.disable("x-powered-by");
+  app.use(helmet());
   app.use(cors(corsOptions));
   // Express 5 rejects "*" here; use a regex to match all routes for preflight.
   app.options(/.*/, cors(corsOptions));
   app.use(cookieParser());
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "100kb" }));
+  app.use("/api", globalLimiter);
 
   app.get("/", (_req, res) => {
     res.json({
@@ -112,7 +129,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/user", createLegacyUserRouter(dependencies));
   app.use("/api/problems", createProblemRouter(dependencies));
   app.use("/api/contests", createContestRouter(dependencies));
-  app.use("/api/submissions", createSubmissionRouter(dependencies));
+  app.use("/api/submissions", submissionLimiter, createSubmissionRouter(dependencies));
   app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
 
   app.use(notFoundHandler);

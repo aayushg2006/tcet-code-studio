@@ -9,7 +9,7 @@ import {
 } from "./judge0-client";
 
 const PROVIDER_NAME = "judge0";
-const SUBMISSION_CHUNK_SIZE = 20;
+const SUBMISSION_CHUNK_SIZE = 5;
 const MAX_CPU_TIME_LIMIT_SECONDS = 5;
 
 const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
