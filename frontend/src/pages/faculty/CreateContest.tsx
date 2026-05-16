@@ -9,7 +9,6 @@ import { contestsApi } from "@/api/services";
 import { EXECUTABLE_LANGUAGES } from "@/api/mappers";
 import {
   DEPARTMENTS,
-  type ContestLifecycleState,
   type ContestQuestion,
   type ContestType,
   type Department,
@@ -32,7 +31,6 @@ type ContestMetadata = {
   startTime: string;
   duration: string;
   type: ContestType;
-  lifecycleState: ContestLifecycleState;
   targetDepartment: Department | "All";
   maxViolations: string;
 };
@@ -150,7 +148,6 @@ function mapContestToMetadata(contest: FacultyContestDetail): ContestMetadata {
     startTime: contest.startAt.slice(0, 16),
     duration: String(contest.durationMinutes),
     type: contest.type,
-    lifecycleState: contest.lifecycleState,
     targetDepartment: contest.targetDepartment ?? "All",
     maxViolations: String(contest.maxViolations),
   };
@@ -172,7 +169,6 @@ export default function CreateContest() {
     startTime: "",
     duration: "",
     type: "Rated",
-    lifecycleState: "Draft",
     targetDepartment: "All",
     maxViolations: "3",
   });
@@ -232,7 +228,6 @@ export default function CreateContest() {
         startTime: metadata.startTime,
         duration: Number(metadata.duration),
         type: metadata.type,
-        lifecycleState: metadata.lifecycleState,
         targetDepartment: metadata.targetDepartment === "All" ? null : metadata.targetDepartment,
         maxViolations: Number(metadata.maxViolations),
         questions: normalizedQuestions,
@@ -393,20 +388,6 @@ export default function CreateContest() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Initial State</label>
-              <Select value={metadata.lifecycleState} onValueChange={(value: ContestLifecycleState) => setMetadata((current) => ({ ...current, lifecycleState: value }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Published">Published</SelectItem>
-                  <SelectItem value="Archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Max Violations</label>
               <Input type="number" min={1} value={metadata.maxViolations} onChange={(event) => setMetadata((current) => ({ ...current, maxViolations: event.target.value }))} />
@@ -420,12 +401,6 @@ export default function CreateContest() {
             <p className="text-sm text-muted-foreground">
               {questions.length} question{questions.length === 1 ? "" : "s"} • {totalPoints} pts total
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => addQuestion("MCQ")}>Add MCQ</Button>
-            <Button variant="outline" onClick={() => addQuestion("MSQ")}>Add MSQ</Button>
-            <Button variant="outline" onClick={() => addQuestion("Coding")}>Add Coding Problem</Button>
           </div>
 
           <div>
@@ -614,6 +589,12 @@ export default function CreateContest() {
                 )}
               </Card>
             ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => addQuestion("MCQ")}>Add MCQ</Button>
+            <Button variant="outline" onClick={() => addQuestion("MSQ")}>Add MSQ</Button>
+            <Button variant="outline" onClick={() => addQuestion("Coding")}>Add Coding Problem</Button>
           </div>
         </Card>
 

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { contestsApi } from "@/api/services";
+import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -109,7 +110,6 @@ export default function FacultyContestDetail() {
             <h1 className="font-display text-3xl font-bold">{contest.title}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <Badge>{contest.type}</Badge>
-              <Badge variant="outline">{contest.lifecycleState}</Badge>
               <Badge variant={contest.resultsPublished ? "default" : "outline"}>
                 {contest.resultsPublished ? "Results Published" : "Results Hidden"}
               </Badge>
@@ -180,8 +180,10 @@ export default function FacultyContestDetail() {
               {attempts.map((attempt) => (
                 <TableRow key={attempt.id}>
                   <TableCell>
-                    <div className="font-medium">{attempt.userName ?? attempt.userEmail}</div>
-                    <div className="text-xs text-muted-foreground">{attempt.userUid ?? attempt.userEmail}</div>
+                    <Link to={toFacultyStudentProfilePath(attempt.userEmail)} className="block hover:text-accent">
+                      <div className="font-medium">{attempt.userName ?? attempt.userEmail}</div>
+                      <div className="text-xs text-muted-foreground">{attempt.userUid ?? attempt.userEmail}</div>
+                    </Link>
                   </TableCell>
                   <TableCell>{attempt.status}</TableCell>
                   <TableCell>{attempt.score}</TableCell>
@@ -221,8 +223,10 @@ export default function FacultyContestDetail() {
                 <TableRow key={entry.attemptId}>
                   <TableCell>#{entry.rank}</TableCell>
                   <TableCell>
-                    <div className="font-medium">{entry.userName ?? entry.userEmail}</div>
-                    <div className="text-xs text-muted-foreground">{entry.userUid ?? entry.userEmail}</div>
+                    <Link to={toFacultyStudentProfilePath(entry.userEmail)} className="block hover:text-accent">
+                      <div className="font-medium">{entry.userName ?? entry.userEmail}</div>
+                      <div className="text-xs text-muted-foreground">{entry.userUid ?? entry.userEmail}</div>
+                    </Link>
                   </TableCell>
                   <TableCell>{entry.solvedCount}</TableCell>
                   <TableCell>{entry.timeTakenMs !== null ? `${Math.ceil(entry.timeTakenMs / 1000)} sec` : "-"}</TableCell>
@@ -253,8 +257,10 @@ export default function FacultyContestDetail() {
               <div className="grid gap-3 md:grid-cols-4">
                 <Card className="p-4 shadow-none">
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Student</div>
-                  <div className="mt-2 font-medium">{review.student.name ?? review.student.email}</div>
-                  <div className="text-xs text-muted-foreground">{review.student.uid ?? review.student.email}</div>
+                  <Link to={toFacultyStudentProfilePath(review.student.email)} className="mt-2 block hover:text-accent">
+                    <div className="font-medium">{review.student.name ?? review.student.email}</div>
+                    <div className="text-xs text-muted-foreground">{review.student.uid ?? review.student.email}</div>
+                  </Link>
                 </Card>
                 <Card className="p-4 shadow-none">
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Score</div>

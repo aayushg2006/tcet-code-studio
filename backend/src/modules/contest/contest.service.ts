@@ -71,7 +71,6 @@ export interface ContestService {
   getContestById(user: AuthenticatedUser, contestId: string): Promise<StudentContestDetailResponse | FacultyContestDetailResponse>;
   createContest(user: AuthenticatedUser, input: ContestCreateInput): Promise<FacultyContestDetailResponse>;
   updateContest(user: AuthenticatedUser, contestId: string, input: ContestUpdateInput): Promise<FacultyContestDetailResponse>;
-  updateContestState(user: AuthenticatedUser, contestId: string, lifecycleState: ContestRecord["lifecycleState"]): Promise<FacultyContestDetailResponse>;
   updateContestResults(user: AuthenticatedUser, contestId: string, input: ContestResultsInput): Promise<FacultyContestDetailResponse>;
   startAttempt(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptRecord>;
   submitAttempt(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptRecord>;
@@ -117,7 +116,7 @@ function ensureFacultyOwnsContest(user: AuthenticatedUser, contest: ContestRecor
 }
 
 function ensureStudentCanAccessContest(user: AuthenticatedUser, contest: ContestRecord | null): ContestRecord {
-  if (!contest || contest.lifecycleState !== "Published") {
+  if (!contest) {
     throw new AppError(404, "Contest not found");
   }
 
@@ -201,10 +200,13 @@ function ensureContestIsLive(contest: ContestRecord, now: Date): void {
   }
 }
 
-function ensureStudentCanViewQuestions(contest: ContestRecord, now: Date): void {
-  if (computeContestStatus(contest, now) === "Upcoming") {
-    throw new AppError(403, "Questions will be available when the contest goes live");
-  }
+function isViolationEvent(type: ContestProctoringEventRecord["type"]): boolean {
+  return (
+    type === "TAB_SWITCH" ||
+    type === "VISIBILITY_LOSS" ||
+    type === "FULLSCREEN_EXIT" ||
+    type === "PRINT_SCREEN"
+  );
 }
 
 function ensureStudentCanViewStandings(contest: ContestRecord): void {
@@ -465,7 +467,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const now = dependencies.now();
 
       const visible = contests
-        .filter((contest) => (user.role === "FACULTY" ? contest.createdBy === user.email : contest.lifecycleState === "Published"))
+        .filter((contest) => (user.role === "FACULTY" ? contest.createdBy === user.email : true))
         .filter((contest) =>
           user.role === "STUDENT"
             ? !contest.targetDepartment || contest.targetDepartment === normalizeDepartment(user.department)
@@ -509,7 +511,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         startAt: new Date(input.startTime),
         durationMinutes: Number(input.duration),
         type: input.type,
-        lifecycleState: input.lifecycleState ?? "Draft",
+        lifecycleState: "Published",
         resultsPublished: false,
         targetDepartment: normalizeDepartment(input.targetDepartment) ?? null,
         maxViolations: input.maxViolations ?? 3,
@@ -532,22 +534,10 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         ...(input.startTime !== undefined ? { startAt: new Date(input.startTime) } : {}),
         ...(input.duration !== undefined ? { durationMinutes: Number(input.duration) } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
-        ...(input.lifecycleState !== undefined ? { lifecycleState: input.lifecycleState } : {}),
+        lifecycleState: "Published",
         ...(input.targetDepartment !== undefined ? { targetDepartment: normalizeDepartment(input.targetDepartment) ?? null } : {}),
         ...(input.maxViolations !== undefined ? { maxViolations: input.maxViolations } : {}),
         ...(input.questions !== undefined ? { questions: normalizeContestQuestions(input.questions) ?? contest.questions } : {}),
-        updatedAt: dependencies.now(),
-      };
-
-      await dependencies.contestRepository.save(updatedContest);
-      return toFacultyContestDetailResponse(updatedContest);
-    },
-
-    async updateContestState(user, contestId, lifecycleState) {
-      const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
-      const updatedContest: ContestRecord = {
-        ...contest,
-        lifecycleState,
         updatedAt: dependencies.now(),
       };
 
@@ -621,13 +611,14 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
       const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
 
-      const nextViolationCount = attempt.violationCount + 1;
+      const nextViolationCount = isViolationEvent(type) ? attempt.violationCount + 1 : attempt.violationCount;
+      const shouldAutoSubmit = isViolationEvent(type) && nextViolationCount >= contest.maxViolations;
       const updatedAttempt = withDerivedAttemptFields({
         ...attempt,
         violationCount: nextViolationCount,
-        status: nextViolationCount >= contest.maxViolations ? "AUTO_SUBMITTED" : attempt.status,
-        autoSubmittedAt: nextViolationCount >= contest.maxViolations ? now : attempt.autoSubmittedAt,
-        submittedAt: nextViolationCount >= contest.maxViolations ? now : attempt.submittedAt,
+        status: shouldAutoSubmit ? "AUTO_SUBMITTED" : attempt.status,
+        autoSubmittedAt: shouldAutoSubmit ? now : attempt.autoSubmittedAt,
+        submittedAt: shouldAutoSubmit ? now : attempt.submittedAt,
         updatedAt: now,
       });
 
@@ -647,9 +638,9 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     async getQuestionById(user, contestId, questionId) {
       const now = dependencies.now();
       const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
-      ensureStudentCanViewQuestions(contest, now);
+      ensureContestIsLive(contest, now);
+      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
       const question = ensureContestQuestion(contest, questionId);
-      const attempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },
 

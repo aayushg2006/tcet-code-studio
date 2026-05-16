@@ -1,8 +1,10 @@
 import cookieParser from "cookie-parser";
 import cors, { type CorsOptions } from "cors";
 import express, { type Express } from "express";
+import helmet from "helmet";
 import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
+import { createGlobalApiRateLimiter } from "./middleware/rate-limit";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
@@ -68,15 +70,19 @@ function resolveCorsOptions(): CorsOptions {
 
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
+  app.set("trust proxy", 1);
   const corsOptions = resolveCorsOptions();
   const allowedOrigins = resolveAllowedOrigins();
+  const globalLimiter = createGlobalApiRateLimiter();
 
   app.disable("x-powered-by");
+  app.use(helmet());
   app.use(cors(corsOptions));
   // Express 5 rejects "*" here; use a regex to match all routes for preflight.
   app.options(/.*/, cors(corsOptions));
   app.use(cookieParser());
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "100kb" }));
+  app.use("/api", globalLimiter);
 
   app.get("/", (_req, res) => {
     res.json({

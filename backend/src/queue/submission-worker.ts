@@ -4,6 +4,7 @@ import { createRedisConnection, type SubmissionJobData } from "./submission-queu
 import type { SubmissionService } from "../modules/submission/submission.service";
 
 const MAX_SAFE_WORKER_CONCURRENCY = 10;
+const DEFAULT_WORKER_CONCURRENCY = 4;
 
 export function createSubmissionWorker(submissionService: SubmissionService): Worker<SubmissionJobData> {
   return new Worker<SubmissionJobData>(
@@ -13,7 +14,7 @@ export function createSubmissionWorker(submissionService: SubmissionService): Wo
     },
     {
       connection: createRedisConnection(),
-      concurrency: Math.min(env.SUBMISSION_WORKER_CONCURRENCY, MAX_SAFE_WORKER_CONCURRENCY),
+      concurrency: Math.min(env.SUBMISSION_WORKER_CONCURRENCY ?? DEFAULT_WORKER_CONCURRENCY, MAX_SAFE_WORKER_CONCURRENCY),
     },
   );
 }

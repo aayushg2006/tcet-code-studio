@@ -8,6 +8,7 @@ interface UseContestProctoringOptions {
   contestId: string;
   pathname: string;
   attempt: ContestAttempt | null;
+  maxViolations?: number;
   onAttemptUpdate: (attempt: ContestAttempt) => void;
 }
 
@@ -17,6 +18,7 @@ export function useContestProctoring({
   contestId,
   pathname,
   attempt,
+  maxViolations = 3,
   onAttemptUpdate,
 }: UseContestProctoringOptions) {
   const cooldownsRef = useRef<Record<string, number>>({});
@@ -56,7 +58,7 @@ export function useContestProctoring({
         const suffix =
           updated.status === "AUTO_SUBMITTED"
             ? " Attempt auto-submitted."
-            : ` Violation ${updated.violationCount}/3.`;
+            : ` Violation ${updated.violationCount}/${maxViolations}.`;
         toast.warning(`${warning}${suffix}`);
       } catch (error) {
         toast.error((error as Error).message || "Failed to record proctoring event");
@@ -88,30 +90,6 @@ export function useContestProctoring({
       }
     };
 
-    const onCopy = (event: ClipboardEvent) => {
-      event.preventDefault();
-      void sendEvent({ type: "COPY", details: "Copy blocked" }, "clipboard", "Copy is not allowed during the contest.");
-    };
-
-    const onCut = (event: ClipboardEvent) => {
-      event.preventDefault();
-      void sendEvent({ type: "CUT", details: "Cut blocked" }, "clipboard", "Cut is not allowed during the contest.");
-    };
-
-    const onPaste = (event: ClipboardEvent) => {
-      event.preventDefault();
-      void sendEvent({ type: "PASTE", details: "Paste blocked" }, "clipboard", "Paste is not allowed during the contest.");
-    };
-
-    const onContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      void sendEvent(
-        { type: "CONTEXT_MENU", details: "Context menu blocked" },
-        "contextmenu",
-        "Context menu is disabled during the contest.",
-      );
-    };
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "PrintScreen") {
         void sendEvent(
@@ -125,21 +103,13 @@ export function useContestProctoring({
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("blur", onBlur);
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    document.addEventListener("copy", onCopy);
-    document.addEventListener("cut", onCut);
-    document.addEventListener("paste", onPaste);
-    document.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("fullscreenchange", onFullscreenChange);
-      document.removeEventListener("copy", onCopy);
-      document.removeEventListener("cut", onCut);
-      document.removeEventListener("paste", onPaste);
-      document.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [attempt, contestId, onAttemptUpdate, pathname]);
+  }, [attempt, contestId, maxViolations, onAttemptUpdate, pathname]);
 }

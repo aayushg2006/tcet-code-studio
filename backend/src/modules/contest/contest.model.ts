@@ -3,7 +3,7 @@ import type { Department, Difficulty, ExecutableLanguage } from "../../shared/ty
 import { toIsoString } from "../../shared/utils/date";
 
 export type ContestType = "Rated" | "Practice";
-export type ContestLifecycleState = "Draft" | "Published" | "Archived";
+export type ContestLifecycleState = "Published";
 export type ContestComputedStatus = "Live" | "Upcoming" | "Ended";
 export type ContestStudentListStatus = "Live" | "Upcoming" | "Past";
 export type ContestQuestionType = "MCQ" | "MSQ" | "Coding";
@@ -505,7 +505,7 @@ export function toStudentContestDetailResponse(
   report: StudentContestReport | null = null,
 ): StudentContestDetailResponse {
   const computedStatus = computeContestStatus(contest, now);
-  const includeQuestions = computedStatus !== "Upcoming";
+  const includeQuestions = computedStatus === "Live" && attempt?.status === "ACTIVE";
 
   return {
     id: contest.id,

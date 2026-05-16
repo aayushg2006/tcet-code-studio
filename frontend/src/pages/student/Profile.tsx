@@ -2,12 +2,14 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Download } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { submissionsApi, userApi } from "@/api/services";
 import { SubmissionActivityHeatmap } from "@/components/SubmissionActivityHeatmap";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
@@ -35,7 +37,7 @@ function initialsFromName(name: string | null, email: string): string {
 
 function statCard(label: string, value: string | number) {
   return (
-    <Card className="border border-border bg-background p-5 shadow-none">
+    <Card className="border border-border bg-background p-5">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-2 text-4xl font-bold leading-none">{value}</p>
     </Card>
@@ -44,6 +46,29 @@ function statCard(label: string, value: string | number) {
 
 function formatWhen(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
+}
+
+const chartTooltipStyle = {
+  backgroundColor: "hsl(var(--background))",
+  borderColor: "hsl(var(--border))",
+  borderRadius: "8px",
+  color: "hsl(var(--foreground))",
+};
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderList(items: string[]): string {
+  if (items.length === 0) {
+    return "<li>No data available</li>";
+  }
+
+  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
 export default function StudentProfile() {
@@ -95,7 +120,7 @@ export default function StudentProfile() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="container py-8 text-muted-foreground">Loading profile...</div>
+        <div className="container mx-auto p-6 text-muted-foreground md:p-8">Loading profile...</div>
       </AppLayout>
     );
   }
@@ -103,7 +128,7 @@ export default function StudentProfile() {
   if (isError || !userData?.user) {
     return (
       <AppLayout>
-        <div className="container py-8 text-destructive">{(error as Error)?.message || "Failed to load profile"}</div>
+        <div className="container mx-auto p-6 text-destructive md:p-8">{(error as Error)?.message || "Failed to load profile"}</div>
       </AppLayout>
     );
   }
@@ -111,22 +136,96 @@ export default function StudentProfile() {
   const profile = userData.user;
   const analytics = analyticsData?.analytics;
   const initials = initialsFromName(profile.name, profile.email);
+  const handleDownloadReportCard = () => {
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) {
+      return;
+    }
+
+    const difficultyItems = (analytics?.difficultyBreakdown ?? []).map(
+      (entry) => `${entry.difficulty}: ${entry.solvedCount} solved`,
+    );
+    const languageItems = (analytics?.languageBreakdown ?? []).map(
+      (entry) => `${toLanguageLabel(entry.language)}: ${entry.submissionCount} submissions`,
+    );
+    const recentItems = (analytics?.submissionHistory ?? []).slice(0, 10).map(
+      (entry) => `${entry.problemTitle} - ${toStatusLabel(entry.status)} - ${toLanguageLabel(entry.language)} - ${formatWhen(entry.createdAt)}`,
+    );
+
+    reportWindow.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Student Report Card - ${escapeHtml(profile.name ?? profile.email)}</title>
+    <style>
+      body { font-family: Arial, sans-serif; color: #111827; margin: 32px; }
+      h1 { margin: 0 0 4px; font-size: 28px; }
+      h2 { margin: 24px 0 8px; font-size: 16px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
+      .muted { color: #6b7280; }
+      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+      .stat { border: 1px solid #d1d5db; padding: 12px; border-radius: 6px; }
+      .label { color: #6b7280; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+      .value { font-size: 22px; font-weight: 700; margin-top: 6px; }
+      dl { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; }
+      dt { color: #6b7280; }
+      dd { margin: 0; font-weight: 600; }
+      li { margin-bottom: 6px; }
+      @media print { button { display: none; } body { margin: 20mm; } }
+    </style>
+  </head>
+  <body>
+    <button onclick="window.print()">Print / Save as PDF</button>
+    <h1>Student Report Card</h1>
+    <div class="muted">Generated from TCET Code Studio</div>
+    <h2>Identity</h2>
+    <dl>
+      <dt>Name</dt><dd>${escapeHtml(profile.name ?? "Student")}</dd>
+      <dt>Email</dt><dd>${escapeHtml(profile.email)}</dd>
+      <dt>UID</dt><dd>${escapeHtml(profile.uid ?? "Not set")}</dd>
+      <dt>Roll Number</dt><dd>${escapeHtml(profile.rollNumber ?? "Not set")}</dd>
+      <dt>Department</dt><dd>${escapeHtml(profile.department ?? "Not set")}</dd>
+      <dt>Semester</dt><dd>${escapeHtml(profile.semester ?? "Not set")}</dd>
+    </dl>
+    <div class="grid">
+      <div class="stat"><div class="label">Rank</div><div class="value">${escapeHtml(profile.rank ? `#${profile.rank}` : "N/A")}</div></div>
+      <div class="stat"><div class="label">Solved</div><div class="value">${escapeHtml(profile.problemsSolved)}</div></div>
+      <div class="stat"><div class="label">Accepted</div><div class="value">${escapeHtml(profile.acceptedSubmissionCount)}</div></div>
+      <div class="stat"><div class="label">Accuracy</div><div class="value">${escapeHtml(`${profile.accuracy}%`)}</div></div>
+    </div>
+    <h2>Difficulty Breakdown</h2>
+    <ul>${renderList(difficultyItems)}</ul>
+    <h2>Language Breakdown</h2>
+    <ul>${renderList(languageItems)}</ul>
+    <h2>Recent Submission History</h2>
+    <ul>${renderList(recentItems)}</ul>
+    <script>window.focus(); window.print();</script>
+  </body>
+</html>`);
+    reportWindow.document.close();
+  };
 
   return (
     <AppLayout>
-      <div className="container space-y-6 bg-slate-50 py-8 dark:bg-background">
-        <div className="space-y-1">
-          <h1 className="font-display text-3xl font-bold">
-            {isFacultyView ? "Student Profile Dashboard" : "Academic Profile Dashboard"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Student identity, endorsement profile, and performance snapshot.
-          </p>
+      <div className="container mx-auto space-y-6 p-6 md:p-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <h1 className="font-display text-3xl font-bold">
+              {isFacultyView ? "Student Profile Dashboard" : "Academic Profile Dashboard"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Student identity, endorsement profile, and performance snapshot.
+            </p>
+          </div>
+          {isFacultyView && (
+            <Button variant="outline" onClick={handleDownloadReportCard}>
+              <Download className="mr-2 h-4 w-4" /> Download Report Card
+            </Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
           <div className="md:col-span-4">
-            <Card className="relative border border-border bg-background p-6 shadow-none">
+            <Card className="relative border border-border bg-background p-6">
               <Badge
                 className={`absolute right-6 top-6 border-0 ${
                   profile.isProfileComplete
@@ -209,7 +308,7 @@ export default function StudentProfile() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card className="border border-border bg-background p-5 shadow-none">
+              <Card className="border border-border bg-background p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
                 <div className="mt-4 flex items-center justify-center">
                   <PieChart width={260} height={220}>
@@ -218,25 +317,25 @@ export default function StudentProfile() {
                         <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                   </PieChart>
                 </div>
               </Card>
 
-              <Card className="border border-border bg-background p-5 shadow-none">
+              <Card className="border border-border bg-background p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
                 <div className="mt-4 overflow-x-auto">
                   <BarChart width={320} height={220} data={languageData}>
                     <XAxis dataKey="name" tickLine={false} axisLine={false} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
                   </BarChart>
                 </div>
               </Card>
             </div>
 
-            <Card className="border border-border bg-background shadow-none">
+            <Card className="border border-border bg-background">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
               </CardHeader>
@@ -245,7 +344,7 @@ export default function StudentProfile() {
               </CardContent>
             </Card>
 
-            <Card className="border border-border bg-background p-5 shadow-none">
+            <Card className="border border-border bg-background p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Accepted</h2>
               <div className="mt-4 overflow-hidden rounded-md border border-border">
                 <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">
@@ -273,7 +372,7 @@ export default function StudentProfile() {
               </div>
             </Card>
 
-            <Card className="border border-border bg-background p-5 shadow-none">
+            <Card className="border border-border bg-background p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
               <div className="mt-4 overflow-hidden rounded-md border border-border">
                 <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">

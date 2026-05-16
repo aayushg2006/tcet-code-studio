@@ -168,11 +168,21 @@ function getFileExtension(language: ExecutableLanguage): string {
   return map[language] ?? language;
 }
 
+function formatRunStatus(status: SubmissionResult["status"]): string {
+  if (status === "ACCEPTED") {
+    return "Ran Successfully";
+  }
+
+  return toStatusLabel(status);
+}
+
 export default function ContestCodingWorkspace() {
   const { id = "", questionId = "" } = useParams();
   const pathname = `/student/contests/${id}/questions/${questionId}`;
   const queryClient = useQueryClient();
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const blockedClipboardToastRef = useRef(0);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-question-detail", id, questionId],
@@ -184,7 +194,8 @@ export default function ContestCodingWorkspace() {
   const attempt = payload?.attempt ?? null;
   const question = payload?.question;
   const contest = payload?.contest;
-  const availableLanguages =
+  const attemptIsActive = attempt?.status === "ACTIVE";
+  const availableLanguages: ExecutableLanguage[] =
     question && question.type === "Coding" ? EXECUTABLE_LANGUAGES : ["cpp"];
   const defaultLanguage = (availableLanguages[0] ?? "cpp") as ExecutableLanguage;
   const [language, setLanguage] = useState<ExecutableLanguage>(defaultLanguage);
@@ -217,8 +228,41 @@ export default function ContestCodingWorkspace() {
     contestId: id,
     pathname,
     attempt,
+    maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
   });
+
+  useEffect(() => {
+    if (!attemptIsActive) {
+      return;
+    }
+
+    const container = editorContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const blockClipboardAction = (event: ClipboardEvent | MouseEvent) => {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - blockedClipboardToastRef.current > 2000) {
+        blockedClipboardToastRef.current = now;
+        toast.info("Copy, cut, paste, and right-click are disabled in the contest workspace.");
+      }
+    };
+
+    container.addEventListener("copy", blockClipboardAction);
+    container.addEventListener("cut", blockClipboardAction);
+    container.addEventListener("paste", blockClipboardAction);
+    container.addEventListener("contextmenu", blockClipboardAction);
+
+    return () => {
+      container.removeEventListener("copy", blockClipboardAction);
+      container.removeEventListener("cut", blockClipboardAction);
+      container.removeEventListener("paste", blockClipboardAction);
+      container.removeEventListener("contextmenu", blockClipboardAction);
+    };
+  }, [attemptIsActive]);
 
   const startAttemptMutation = useMutation({
     mutationFn: () => contestsApi.startAttempt(id, pathname),
@@ -288,7 +332,6 @@ export default function ContestCodingWorkspace() {
     return <Navigate to={`/student/contests/${id}`} replace />;
   }
 
-  const attemptIsActive = attempt?.status === "ACTIVE";
   const isLocked = Boolean(attempt && attempt.status !== "ACTIVE");
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
@@ -298,7 +341,10 @@ export default function ContestCodingWorkspace() {
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
       <div className="border-b border-border bg-card">
         <div className="container flex h-12 items-center justify-between">
-          <Link to={`/student/contests/${id}`} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-accent">
+          <Link
+            to={`/student/contests/${id}`}
+            className="inline-flex items-center gap-1 rounded-none bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600"
+          >
             <ChevronLeft className="h-4 w-4" /> Back to contest
           </Link>
           <div className="text-xs text-muted-foreground">
@@ -308,10 +354,12 @@ export default function ContestCodingWorkspace() {
         </div>
       </div>
 
-      <div className="h-[calc(100vh-7rem)] min-h-[36rem] p-2 lg:p-3">
-        <ResizablePanelGroup direction="horizontal">
-          <ResizablePanel defaultSize={40} minSize={28} className="overflow-y-auto pr-2">
-            <Card className="h-full p-6 shadow-card">
+      <div className="h-[calc(100vh-4.5rem)] w-full overflow-hidden flex flex-col">
+        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+          <ResizablePanel defaultSize={40} minSize={28} className="h-full">
+            <div className="relative h-full w-full">
+              <div className="absolute inset-0 overflow-y-auto p-6">
+                <Card className="p-6 shadow-card">
               <div className="flex items-center gap-2">
                 <Badge variant="outline">Q{question.questionNumber}</Badge>
                 <Badge variant="outline">{contest.computedStatus}</Badge>
@@ -386,14 +434,16 @@ export default function ContestCodingWorkspace() {
                   </Card>
                 )}
               </section>
-            </Card>
+                </Card>
+              </div>
+            </div>
           </ResizablePanel>
 
-          <ResizableHandle withHandle />
+          <ResizableHandle withHandle className="bg-border" />
 
-          <ResizablePanel defaultSize={60} minSize={30}>
-            <div className="flex h-full flex-col gap-3">
-              <Card className="overflow-hidden shadow-card">
+          <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <Card ref={editorContainerRef} className="overflow-hidden shadow-card">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <select
@@ -454,7 +504,8 @@ export default function ContestCodingWorkspace() {
                     scrollBeyondLastLine: false,
                     fontFamily: "JetBrains Mono, monospace",
                     tabSize: 2,
-                    formatOnPaste: true,
+                    formatOnPaste: false,
+                    contextmenu: false,
                   }}
                 />
               </Card>
@@ -464,7 +515,7 @@ export default function ContestCodingWorkspace() {
                   <div className="text-sm text-muted-foreground">
                     {activeResult ? (
                       <>
-                        <span className="font-semibold text-foreground">{toStatusLabel(activeResult.status)}</span>
+                        <span className="font-semibold text-foreground">{formatRunStatus(activeResult.status)}</span>
                         {" \u2022 "}Runtime {activeResult.runtimeMs} ms{" \u2022 "}Memory {Math.max(activeResult.memoryKb / 1024, 0).toFixed(1)} MB
                       </>
                     ) : submissionReceipt ? (

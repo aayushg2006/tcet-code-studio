@@ -1,4 +1,5 @@
 import { Navbar } from "./Navbar";
+import { Footer } from "./Footer";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -12,14 +13,10 @@ export function AppLayout({
   hideFooter = false,
 }: AppLayoutProps) {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="flex min-h-screen flex-col bg-background">
       {!hideNavbar && <Navbar />}
       <main className="flex-1 animate-fade-in">{children}</main>
-      {!hideFooter && (
-        <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-          TCET Research Culture & Development Cell · © 2026
-        </footer>
-      )}
+      {!hideFooter && <Footer />}
     </div>
   );
 }

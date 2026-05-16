@@ -8,10 +8,10 @@ import type { UserRepository } from "./user.repository";
 import type { UserService } from "./user.service";
 import { toUserProfileResponse } from "./user.model";
 import {
-  buildAuthenticatedUserFromCoePayload,
-  COE_SHARED_TOKEN_COOKIE_NAME,
-  verifyCoeSharedToken,
-} from "./coe-sso";
+  buildAuthenticatedUserFromMockSsoPayload,
+  MOCK_SSO_TOKEN_COOKIE_NAME,
+  verifyMockSsoToken,
+} from "./mock-sso";
 import { parseUpdateProfilePayload } from "./user.validator";
 
 const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
@@ -102,22 +102,22 @@ export function createUserController({ userService, userRepository }: UserContro
   return {
     async handleSsoCallback(req: Request, res: Response): Promise<void> {
       try {
-        const token = req.cookies?.[COE_SHARED_TOKEN_COOKIE_NAME];
+        const token = req.cookies?.[MOCK_SSO_TOKEN_COOKIE_NAME];
         if (!token) {
           res.status(401).json({ message: "Authentication required." });
           return;
         }
 
-        let decodedToken: ReturnType<typeof verifyCoeSharedToken>;
+        let decodedToken: ReturnType<typeof verifyMockSsoToken>;
         try {
-          decodedToken = verifyCoeSharedToken(token);
+          decodedToken = verifyMockSsoToken(token);
         } catch (error) {
           if (
             error instanceof jwt.TokenExpiredError ||
             error instanceof jwt.JsonWebTokenError ||
             error instanceof jwt.NotBeforeError
           ) {
-            res.clearCookie(COE_SHARED_TOKEN_COOKIE_NAME, { path: "/" });
+            res.clearCookie(MOCK_SSO_TOKEN_COOKIE_NAME, { path: "/" });
             res.status(401).json({ message: "Invalid or expired SSO token." });
             return;
           }
@@ -145,7 +145,7 @@ export function createUserController({ userService, userRepository }: UserContro
           return;
         }
 
-        const authUser = buildAuthenticatedUserFromCoePayload({
+        const authUser = buildAuthenticatedUserFromMockSsoPayload({
           email,
           role,
           status,

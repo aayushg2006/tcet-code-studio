@@ -15,6 +15,7 @@ export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     ACCEPTED: "bg-success/15 text-success border-success/30",
     Accepted: "bg-success/15 text-success border-success/30",
+    "Ran Successfully": "bg-success/15 text-success border-success/30",
     QUEUED: "bg-muted text-muted-foreground border-border",
     Queued: "bg-muted text-muted-foreground border-border",
     RUNNING: "bg-warning/15 text-warning border-warning/40",

@@ -23,6 +23,7 @@ const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
     { to: "/faculty/contests", label: "Contests" },
     { to: "/faculty/submissions", label: "Submissions" },
     { to: "/faculty/leaderboard", label: "Leaderboard" },
+    { to: "/faculty/profile", label: "Profile" },
   ],
 };
 
@@ -90,7 +91,7 @@ export function Navbar() {
               key={l.to}
               to={l.to}
               className={({ isActive }) => cn(
-                "px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                "px-3 py-2 rounded-none text-sm font-medium transition-colors",
                 isActive
                   ? "bg-accent text-accent-foreground shadow-sm"
                   : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/10 dark:text-foreground/70 dark:hover:bg-secondary"

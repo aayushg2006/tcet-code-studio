@@ -72,6 +72,7 @@ export default function ContestDetail() {
     contestId: id,
     pathname,
     attempt,
+    maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
   });
 
@@ -210,7 +211,7 @@ export default function ContestDetail() {
         <Alert variant="destructive">
           <AlertTitle>Proctoring Alert</AlertTitle>
           <AlertDescription>
-            Tab switching, fullscreen exit, and clipboard usage are tracked. Three violations trigger auto-submit.
+            Tab switching, fullscreen exit, and screenshot attempts are tracked. {contest.maxViolations} violations trigger auto-submit.
             {attempt ? ` Current violations: ${attempt.violationCount}/${contest.maxViolations}.` : ""}
           </AlertDescription>
         </Alert>
@@ -282,13 +283,16 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {contest.computedStatus === "Upcoming" && (
+        {contest.computedStatus === "Upcoming" ? (
           <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
-            Questions and the coding workspace will unlock automatically when the contest becomes live.
+            Questions will be revealed when the contest starts.
           </Card>
-        )}
-
-        {contest.questions.map((question) => {
+        ) : !attemptIsActive ? (
+          <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
+            Questions will be revealed after you start the contest and enter the proctored mode.
+          </Card>
+        ) : (
+          contest.questions.map((question) => {
           const state = attempt?.questionStates.find((entry) => entry.questionId === question.id);
           const status = state?.status ?? "UNATTEMPTED";
           const answerValue = answers[question.id];
@@ -417,7 +421,7 @@ export default function ContestDetail() {
               )}
             </Card>
           );
-        })}
+        }))}
 
         {standingsEnabled && (
           <Card className="border border-border bg-background p-6 shadow-none">

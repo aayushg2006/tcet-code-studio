@@ -2,10 +2,10 @@ import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import {
-  buildAuthenticatedUserFromCoePayload,
-  COE_SHARED_TOKEN_COOKIE_NAME,
-  verifyCoeSharedToken,
-} from "../modules/user/coe-sso";
+  buildAuthenticatedUserFromMockSsoPayload,
+  MOCK_SSO_TOKEN_COOKIE_NAME,
+  verifyMockSsoToken,
+} from "../modules/user/mock-sso";
 import type { UserService } from "../modules/user/user.service";
 
 type MiddlewareRequest = Parameters<RequestHandler>[0];
@@ -81,7 +81,7 @@ function redirectToLogin(req: MiddlewareRequest, res: MiddlewareResponse): void 
 export function createAuthMiddleware(userService: Pick<UserService, "syncAuthenticatedUser">): RequestHandler {
   return async (req, res, next) => {
     try {
-      const token = req.cookies?.[COE_SHARED_TOKEN_COOKIE_NAME];
+      const token = req.cookies?.[MOCK_SSO_TOKEN_COOKIE_NAME];
       if (!token) {
         redirectToLogin(req, res);
         return;
@@ -89,14 +89,14 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
 
       let authUser;
       try {
-        authUser = buildAuthenticatedUserFromCoePayload(verifyCoeSharedToken(token));
+        authUser = buildAuthenticatedUserFromMockSsoPayload(verifyMockSsoToken(token));
       } catch (verificationError) {
         if (
           verificationError instanceof jwt.TokenExpiredError ||
           verificationError instanceof jwt.JsonWebTokenError ||
           verificationError instanceof jwt.NotBeforeError
         ) {
-          res.clearCookie(COE_SHARED_TOKEN_COOKIE_NAME, { path: "/" });
+          res.clearCookie(MOCK_SSO_TOKEN_COOKIE_NAME, { path: "/" });
           redirectToLogin(req, res);
           return;
         }

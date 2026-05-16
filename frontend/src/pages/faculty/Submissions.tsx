@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -8,33 +8,33 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { submissionsApi } from "@/api/services";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
-import { DEPARTMENTS, type Department, type SubmissionStatus, type SupportedLanguage } from "@/api/types";
+
+type FacultyStatusFilter = "All" | "ACCEPTED" | "WRONG_ANSWER";
 
 function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
 }
 
 export default function FacultySubmissions() {
-  const [problemFilter, setProblemFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState<SubmissionStatus | "All">("All");
-  const [languageFilter, setLanguageFilter] = useState<SupportedLanguage | "All">("All");
-  const [departmentFilter, setDepartmentFilter] = useState<Department | "All">("All");
+  const [problemIdFilter, setProblemIdFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<FacultyStatusFilter>("All");
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-submissions", problemFilter, statusFilter, languageFilter, departmentFilter],
+    queryKey: ["faculty-submissions", problemIdFilter, statusFilter],
     queryFn: () =>
       submissionsApi.list(
         {
           pageSize: 100,
           sourceType: "problem",
-          problemId: problemFilter === "All" ? undefined : problemFilter,
-          studentDepartment: departmentFilter === "All" ? undefined : departmentFilter,
+          problemId: problemIdFilter.trim() || undefined,
           status: statusFilter === "All" ? undefined : statusFilter,
-          language: languageFilter === "All" ? undefined : languageFilter,
         },
         "/faculty/submissions",
       ),
@@ -47,79 +47,40 @@ export default function FacultySubmissions() {
   });
 
   const submissions = data?.items ?? [];
-  const problems = useMemo(
-    () =>
-      Array.from(
-        new Map(submissions.map((submission) => [submission.problemId, submission.problemTitle])).entries(),
-      ).map(([id, title]) => ({ id, title })),
-    [submissions],
-  );
-  const statuses = useMemo(
-    () => Array.from(new Set(submissions.map((submission) => submission.status))),
-    [submissions],
-  );
-  const languages = useMemo(
-    () => Array.from(new Set(submissions.map((submission) => submission.language))),
-    [submissions],
-  );
-
   return (
     <AppLayout>
       <div className="container space-y-6 py-8">
         <div>
           <h1 className="font-display text-3xl font-bold">Code Submissions</h1>
-          <p className="mt-1 text-muted-foreground">Inspect every submission across all problems.</p>
+          <p className="mt-1 text-muted-foreground">Track and filter student code submissions for analysis.</p>
         </div>
 
-        <Card className="flex flex-wrap gap-3 p-4 shadow-card">
-          <select
-            value={problemFilter}
-            onChange={(event) => setProblemFilter(event.target.value)}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option>All</option>
-            {problems.map((problem) => (
-              <option key={problem.id} value={problem.id}>
-                {problem.title}
-              </option>
-            ))}
-          </select>
-          <select
-            value={departmentFilter}
-            onChange={(event) => setDepartmentFilter(event.target.value as Department | "All")}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option>All</option>
-            {DEPARTMENTS.map((department) => (
-              <option key={department} value={department}>
-                {department}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as SubmissionStatus | "All")}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option>All</option>
-            {statuses.map((status) => (
-              <option key={status} value={status}>
-                {toStatusLabel(status)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={languageFilter}
-            onChange={(event) => setLanguageFilter(event.target.value as SupportedLanguage | "All")}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option>All</option>
-            {languages.map((language) => (
-              <option key={language} value={language}>
-                {toLanguageLabel(language)}
-              </option>
-            ))}
-          </select>
+        <Card className="grid gap-4 p-4 shadow-card md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="submission-status-filter">Status</Label>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as FacultyStatusFilter)}
+            >
+              <SelectTrigger id="submission-status-filter">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                <SelectItem value="ACCEPTED">Accepted</SelectItem>
+                <SelectItem value="WRONG_ANSWER">Wrong Answer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="submission-problem-id-filter">Problem ID</Label>
+            <Input
+              id="submission-problem-id-filter"
+              placeholder="e.g. problem_123"
+              value={problemIdFilter}
+              onChange={(event) => setProblemIdFilter(event.target.value)}
+            />
+          </div>
         </Card>
 
         <Card className="overflow-hidden shadow-card">

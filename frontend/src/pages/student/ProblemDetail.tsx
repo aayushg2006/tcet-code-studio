@@ -132,6 +132,14 @@ function formatStatus(status: SubmissionStatus): string {
   return toStatusLabel(status);
 }
 
+function formatExecutionStatus(status: SubmissionStatus, isRunAction: boolean): string {
+  if (isRunAction && status === "ACCEPTED") {
+    return "Ran Successfully";
+  }
+
+  return formatStatus(status);
+}
+
 function formatRelativeTime(isoDate: string): string {
   const created = new Date(isoDate).getTime();
   const diffMs = Date.now() - created;
@@ -404,15 +412,19 @@ export default function ProblemDetail() {
       }
     : runResult;
   const isSubmissionProcessing = pendingSubmissionStatus ? isSubmissionPending(pendingSubmissionStatus) : false;
+  const showingRunResult = Boolean(runResult) && !submitResult;
   const activeConsoleOutput = runResult
     ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}`.trim()
     : submitResult
       ? `${submitResult.stdout || ""}${submitResult.stderr ? `\n${submitResult.stderr}` : ""}`.trim()
       : "";
   const lineCount = code.split("\n").length;
+  const activeResultStatusLabel = activeResult
+    ? formatExecutionStatus(activeResult.status, showingRunResult)
+    : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       <Navbar />
       <div className="border-b border-border bg-card">
         <div className="container flex h-12 items-center justify-between">
@@ -425,10 +437,12 @@ export default function ProblemDetail() {
         </div>
       </div>
 
-      <div className="h-[calc(100vh-7rem)] min-h-[36rem] p-2 lg:p-3">
-        <ResizablePanelGroup direction="horizontal">
-          <ResizablePanel defaultSize={40} minSize={25} className="overflow-y-auto pr-2">
-            <Card className="h-full p-6 shadow-card">
+      <div className="h-[calc(100vh-4.5rem)] w-full overflow-hidden flex flex-col">
+        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+          <ResizablePanel defaultSize={40} minSize={25} className="h-full">
+            <div className="relative h-full w-full">
+              <div className="absolute inset-0 overflow-y-auto p-6">
+                <Card className="p-6 shadow-card">
               <div className="flex items-start justify-between gap-2">
                 <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
                 <DifficultyBadge d={problem.difficulty} />
@@ -495,12 +509,14 @@ export default function ProblemDetail() {
                   </div>
                 </div>
               </section>
-            </Card>
+                </Card>
+              </div>
+            </div>
           </ResizablePanel>
 
-          <ResizableHandle withHandle />
+          <ResizableHandle withHandle className="bg-border" />
 
-          <ResizablePanel defaultSize={60} minSize={30}>
+          <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
             <div className="h-full min-h-0 pl-2">
               <ResizablePanelGroup direction="vertical" className="gap-2">
                 <ResizablePanel defaultSize={68} minSize={35}>
@@ -576,8 +592,8 @@ export default function ProblemDetail() {
                               id: "tcet.format-code",
                               label: "Format Code",
                               keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
-                              run: async (currentEditor) => {
-                                await formatCodeInEditor(currentEditor, languageRef.current);
+                              run: async () => {
+                                await formatCodeInEditor(editor, languageRef.current);
                               },
                             });
                           }}
@@ -630,7 +646,7 @@ export default function ProblemDetail() {
                           </span>
                         ) : activeResult ? (
                           <span className="flex items-center gap-1.5">
-                            <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {formatStatus(activeResult.status)}
+                            <CheckCircle2 className="h-4 w-4 text-success" /> Last result: {activeResultStatusLabel}
                           </span>
                         ) : (
                           "Run code to see results"
@@ -653,7 +669,7 @@ export default function ProblemDetail() {
                   </div>
                 </ResizablePanel>
 
-                <ResizableHandle withHandle />
+                <ResizableHandle withHandle className="bg-border" />
 
                 <ResizablePanel defaultSize={32} minSize={20}>
                   <Card className="flex h-full min-h-[220px] flex-col overflow-hidden shadow-card">
@@ -682,7 +698,7 @@ export default function ProblemDetail() {
                           )}
                         >
                           <div className="flex items-center justify-between">
-                            <StatusBadge status={formatStatus(activeResult.status)} />
+                            <StatusBadge status={activeResultStatusLabel ?? formatStatus(activeResult.status)} />
                             <span className="font-mono-code text-xs">
                               {activeResult.passedCount}/{activeResult.totalCount} passed
                             </span>
@@ -705,7 +721,7 @@ export default function ProblemDetail() {
                             ? "$ Running solution against test cases..."
                             : isSubmissionProcessing
                               ? `$ Submission ${pendingSubmissionId ?? ""} is ${pendingSubmissionStatus ? formatStatus(pendingSubmissionStatus) : "Processing"}...`
-                              : activeConsoleOutput || (activeResult ? `Status: ${formatStatus(activeResult.status)}` : "// stdout/stderr will appear here")}
+                              : activeConsoleOutput || (activeResult ? `Status: ${activeResultStatusLabel}` : "// stdout/stderr will appear here")}
                         </pre>
                       )}
                       {tab === "subs" && (
