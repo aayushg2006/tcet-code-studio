@@ -5,23 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Code2, Trophy, BookOpen, Sparkles, LogIn } from "lucide-react";
 import { userApi } from "@/api/services";
-import { getApiBaseUrl } from "@/api/client";
 import { getHomePathForRole } from "@/lib/role-routing";
-
-function getMockSsoLoginUrl(): string {
-  if (typeof window === "undefined") {
-    return "http://localhost:4000/login?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fsso%2Fcallback%3FfrontendOrigin%3Dhttp%253A%252F%252Flocalhost%253A5173";
-  }
-
-  const host = window.location.hostname || "localhost";
-  const backendBaseUrl = getApiBaseUrl();
-  const frontendOrigin = window.location.origin;
-  const callbackUrl = encodeURIComponent(
-    `${backendBaseUrl}/api/auth/sso/callback?frontendOrigin=${encodeURIComponent(frontendOrigin)}`,
-  );
-
-  return `${window.location.protocol}//${host}:4000/login?callbackUrl=${callbackUrl}`;
-}
+import { getMockSsoLoginUrl } from "@/lib/sso";
 
 export default function Index() {
   const userQuery = useQuery({

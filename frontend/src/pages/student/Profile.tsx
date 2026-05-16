@@ -37,7 +37,7 @@ function initialsFromName(name: string | null, email: string): string {
 
 function statCard(label: string, value: string | number) {
   return (
-    <Card className="border border-border bg-background p-5">
+    <Card className="profile-card p-5">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-2 text-4xl font-bold leading-none">{value}</p>
     </Card>
@@ -206,26 +206,31 @@ export default function StudentProfile() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto space-y-6 p-6 md:p-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-1">
-            <h1 className="font-display text-3xl font-bold">
-              {isFacultyView ? "Student Profile Dashboard" : "Academic Profile Dashboard"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Student identity, endorsement profile, and performance snapshot.
-            </p>
-          </div>
-          {isFacultyView && (
-            <Button variant="outline" onClick={handleDownloadReportCard}>
-              <Download className="mr-2 h-4 w-4" /> Download Report Card
-            </Button>
-          )}
-        </div>
+      <div className="container mx-auto p-4 md:p-8">
+        <div className="profile-shell relative overflow-hidden p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_18%_16%,hsl(var(--primary)/0.16),transparent_34%),radial-gradient(circle_at_82%_10%,hsl(var(--accent)/0.14),transparent_36%)] dark:opacity-70" />
+          <div className="pointer-events-none absolute inset-0 [background-image:repeating-linear-gradient(130deg,hsl(var(--muted-foreground)/0.09)_0_1px,transparent_1px_20px)] opacity-30 dark:opacity-40" />
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <Card className="relative border border-border bg-background p-6">
+          <div className="relative space-y-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <h1 className="font-display text-3xl font-bold">
+                  {isFacultyView ? "Student Profile Dashboard" : "Academic Profile Dashboard"}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Student identity, endorsement profile, and performance snapshot.
+                </p>
+              </div>
+              {isFacultyView && (
+                <Button variant="outline" onClick={handleDownloadReportCard}>
+                  <Download className="mr-2 h-4 w-4" /> Download Report Card
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
+              <div className="md:col-span-4">
+                <Card className="profile-card relative p-6">
               <Badge
                 className={`absolute right-6 top-6 border-0 ${
                   profile.isProfileComplete
@@ -238,7 +243,7 @@ export default function StudentProfile() {
 
               <div className="flex items-center gap-4 pt-8">
                 <Avatar className="h-14 w-14 border border-border">
-                  <AvatarFallback className="bg-slate-100 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <AvatarFallback className="bg-primary/10 font-semibold text-primary dark:bg-primary/15 dark:text-primary">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -296,119 +301,121 @@ export default function StudentProfile() {
                   </a>
                 </div>
               </div>
-            </Card>
-          </div>
-
-          <div className="space-y-6 md:col-span-8">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              {statCard("Global Rank", profile.rank ? `#${profile.rank}` : "N/A")}
-              {statCard("Total Solved", profile.problemsSolved)}
-              {statCard("Accepted", profile.acceptedSubmissionCount)}
-              {statCard("Accuracy", `${profile.accuracy}%`)}
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card className="border border-border bg-background p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
-                <div className="mt-4 flex items-center justify-center">
-                  <PieChart width={260} height={220}>
-                    <Pie data={difficultyData} cx="50%" cy="50%" outerRadius={78} innerRadius={45} dataKey="value" strokeWidth={1}>
-                      {difficultyData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={chartTooltipStyle} />
-                  </PieChart>
-                </div>
-              </Card>
-
-              <Card className="border border-border bg-background p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
-                <div className="mt-4 overflow-x-auto">
-                  <BarChart width={320} height={220} data={languageData}>
-                    <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={chartTooltipStyle} />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
-                  </BarChart>
-                </div>
-              </Card>
-            </div>
-
-            <Card className="border border-border bg-background">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
-              </CardHeader>
-              <CardContent className="flex justify-center overflow-x-auto pb-6">
-                <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
-              </CardContent>
-            </Card>
-
-            <Card className="border border-border bg-background p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Accepted</h2>
-              <div className="mt-4 overflow-hidden rounded-md border border-border">
-                <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  <div className="col-span-5">Problem</div>
-                  <div className="col-span-2">Language</div>
-                  <div className="col-span-2">Status</div>
-                  <div className="col-span-3">When</div>
-                </div>
-                {(analytics?.recentAcceptedSubmissions ?? []).map((entry) => (
-                  <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
-                    <div className="col-span-5">
-                      <p className="font-medium">{entry.problemTitle}</p>
-                      {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
-                    </div>
-                    <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
-                    <div className="col-span-2 self-center">
-                      <StatusBadge status={toStatusLabel(entry.status)} />
-                    </div>
-                    <div className="col-span-3 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
-                  </div>
-                ))}
-                {(analytics?.recentAcceptedSubmissions.length ?? 0) === 0 && (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">No accepted submissions yet.</div>
-                )}
+                </Card>
               </div>
-            </Card>
 
-            <Card className="border border-border bg-background p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
-              <div className="mt-4 overflow-hidden rounded-md border border-border">
-                <div className="grid grid-cols-12 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  <div className="col-span-4">Problem</div>
-                  <div className="col-span-2">Language</div>
-                  <div className="col-span-2">Status</div>
-                  <div className="col-span-2">When</div>
-                  <div className="col-span-2 text-right">Code</div>
+              <div className="space-y-6 md:col-span-8">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  {statCard("Global Rank", profile.rank ? `#${profile.rank}` : "N/A")}
+                  {statCard("Total Solved", profile.problemsSolved)}
+                  {statCard("Accepted", profile.acceptedSubmissionCount)}
+                  {statCard("Accuracy", `${profile.accuracy}%`)}
                 </div>
-                {(analytics?.submissionHistory ?? []).map((entry) => (
-                  <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
-                    <div className="col-span-4">
-                      <p className="font-medium">{entry.problemTitle}</p>
-                      {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <Card className="profile-card p-5">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
+                    <div className="mt-4 flex items-center justify-center">
+                      <PieChart width={260} height={220}>
+                        <Pie data={difficultyData} cx="50%" cy="50%" outerRadius={78} innerRadius={45} dataKey="value" strokeWidth={1}>
+                          {difficultyData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={chartTooltipStyle} />
+                      </PieChart>
                     </div>
-                    <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
-                    <div className="col-span-2 self-center">
-                      <StatusBadge status={toStatusLabel(entry.status)} />
+                  </Card>
+
+                  <Card className="profile-card p-5">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
+                    <div className="mt-4 overflow-x-auto">
+                      <BarChart width={320} height={220} data={languageData}>
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                        <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={chartTooltipStyle} />
+                        <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
+                      </BarChart>
                     </div>
-                    <div className="col-span-2 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
-                    <div className="col-span-2 text-right">
-                      <button
-                        type="button"
-                        className="text-sm font-medium text-accent hover:underline"
-                        onClick={() => setSelectedSubmissionId(entry.submissionId)}
-                      >
-                        View Code
-                      </button>
+                  </Card>
+                </div>
+
+                <Card className="profile-card">
+                  <CardHeader>
+                    <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex justify-center overflow-x-auto pb-6">
+                    <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
+                  </CardContent>
+                </Card>
+
+                <Card className="profile-card p-5">
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Accepted</h2>
+                  <div className="mt-4 overflow-hidden rounded-md border border-border">
+                    <div className="profile-table-header grid grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80">
+                      <div className="col-span-5">Problem</div>
+                      <div className="col-span-2">Language</div>
+                      <div className="col-span-2">Status</div>
+                      <div className="col-span-3">When</div>
                     </div>
+                    {(analytics?.recentAcceptedSubmissions ?? []).map((entry) => (
+                      <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
+                        <div className="col-span-5">
+                          <p className="font-medium">{entry.problemTitle}</p>
+                          {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
+                        </div>
+                        <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
+                        <div className="col-span-2 self-center">
+                          <StatusBadge status={toStatusLabel(entry.status)} />
+                        </div>
+                        <div className="col-span-3 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
+                      </div>
+                    ))}
+                    {(analytics?.recentAcceptedSubmissions.length ?? 0) === 0 && (
+                      <div className="px-4 py-8 text-center text-sm text-muted-foreground">No accepted submissions yet.</div>
+                    )}
                   </div>
-                ))}
-                {(analytics?.submissionHistory.length ?? 0) === 0 && (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">No submission history yet.</div>
-                )}
+                </Card>
+
+                <Card className="profile-card p-5">
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
+                  <div className="mt-4 overflow-hidden rounded-md border border-border">
+                    <div className="profile-table-header grid grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80">
+                      <div className="col-span-4">Problem</div>
+                      <div className="col-span-2">Language</div>
+                      <div className="col-span-2">Status</div>
+                      <div className="col-span-2">When</div>
+                      <div className="col-span-2 text-right">Code</div>
+                    </div>
+                    {(analytics?.submissionHistory ?? []).map((entry) => (
+                      <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
+                        <div className="col-span-4">
+                          <p className="font-medium">{entry.problemTitle}</p>
+                          {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
+                        </div>
+                        <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
+                        <div className="col-span-2 self-center">
+                          <StatusBadge status={toStatusLabel(entry.status)} />
+                        </div>
+                        <div className="col-span-2 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
+                        <div className="col-span-2 text-right">
+                          <button
+                            type="button"
+                            className="text-sm font-medium text-primary hover:underline"
+                            onClick={() => setSelectedSubmissionId(entry.submissionId)}
+                          >
+                            View Code
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(analytics?.submissionHistory.length ?? 0) === 0 && (
+                      <div className="px-4 py-8 text-center text-sm text-muted-foreground">No submission history yet.</div>
+                    )}
+                  </div>
+                </Card>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
       </div>

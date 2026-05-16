@@ -1,12 +1,14 @@
+import { useEffect } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { LogOut, Moon, Sun } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Moon, Sun } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { userApi } from "@/api/services";
 import type { UserRole } from "@/api/types";
+import { getSessionCloseUrl } from "@/lib/sso";
 
 const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
   STUDENT: [
@@ -46,7 +48,6 @@ function getAvatarFallback(name: string | null | undefined, role: UserRole): str
 export function Navbar() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
-  const queryClient = useQueryClient();
   const userQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => userApi.me(pathname, { suppressAuthRedirect: true }),
@@ -60,19 +61,22 @@ export function Navbar() {
   const showLinks = pathname.startsWith("/student") || pathname.startsWith("/faculty");
   const avatarText = getAvatarFallback(userQuery.data?.user.name, role);
 
-  const handleLogout = () => {
-    if (typeof window === "undefined") {
+  useEffect(() => {
+    if (!showLinks || typeof window === "undefined") {
       return;
     }
 
-    localStorage.clear();
-    sessionStorage.clear();
-    queryClient.removeQueries({ queryKey: ["auth"] });
-    queryClient.removeQueries({ queryKey: ["user"] });
-    queryClient.clear();
-    const authUrl = (import.meta.env.VITE_MOCK_SSO_URL as string | undefined)?.trim() || "http://localhost:4000";
-    window.location.href = `${authUrl.replace(/\/+$/, "")}/logout?callbackUrl=${encodeURIComponent(window.location.origin)}`;
-  };
+    const closeSession = () => {
+      void fetch(getSessionCloseUrl(), {
+        method: "GET",
+        credentials: "include",
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+
+    window.addEventListener("pagehide", closeSession);
+    return () => window.removeEventListener("pagehide", closeSession);
+  }, [showLinks]);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground dark:bg-card dark:text-foreground">
@@ -103,18 +107,6 @@ export function Navbar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          {showLinks && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="text-primary-foreground hover:bg-white/10 dark:text-foreground dark:hover:bg-secondary"
-            >
-              <LogOut className="mr-1.5 h-4 w-4" />
-              Logout
-            </Button>
-          )}
-
           <Button
             variant="ghost"
             size="icon"
