@@ -592,8 +592,8 @@ export default function ProblemDetail() {
                               id: "tcet.format-code",
                               label: "Format Code",
                               keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
-                              run: async (currentEditor) => {
-                                await formatCodeInEditor(currentEditor, languageRef.current);
+                              run: async () => {
+                                await formatCodeInEditor(editor, languageRef.current);
                               },
                             });
                           }}
