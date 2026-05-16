@@ -437,11 +437,12 @@ export default function ProblemDetail() {
         </div>
       </div>
 
-      <div className="h-[calc(100vh-4rem)] w-full overflow-hidden flex flex-col md:h-[calc(100vh-5rem)]">
+      <div className="h-[calc(100vh-4.5rem)] w-full overflow-hidden flex flex-col">
         <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-          <ResizablePanel defaultSize={40} minSize={25} className="h-full overflow-y-auto">
-            <div className="p-6">
-              <Card className="h-full p-6 shadow-card">
+          <ResizablePanel defaultSize={40} minSize={25} className="h-full">
+            <div className="relative h-full w-full">
+              <div className="absolute inset-0 overflow-y-auto p-6">
+                <Card className="p-6 shadow-card">
               <div className="flex items-start justify-between gap-2">
                 <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
                 <DifficultyBadge d={problem.difficulty} />
@@ -508,7 +509,8 @@ export default function ProblemDetail() {
                   </div>
                 </div>
               </section>
-              </Card>
+                </Card>
+              </div>
             </div>
           </ResizablePanel>
 
